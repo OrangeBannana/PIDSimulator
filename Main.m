@@ -1,9 +1,11 @@
 clear, clc, clf;
 
-p = 0.014;
-i = 0.03;
-d = 0.0006;
-f = 0.07;
+p = 0.003;
+i = 0.001;
+d = 0.00018;
+f = 0.110;
+
+randFactor = 5;
 
 % System Constants
 
@@ -13,7 +15,7 @@ reductionRatio = 12/60; % Input Teeth : Output Teeth
 
 spoolRadius = 20/1000; % Spool Radius in Meters
 
-controlPeriod = 26 / 1000; % Time between updates in seconds
+controlPeriod = 40 / 1000; % Time between updates in seconds
 
 gravityConstant = -9.81; % m/s^2
 
@@ -30,9 +32,7 @@ staticFrictionForce = 1.5 * gravityConstant * mass;
 maxVoltage = 12; % Volts
 
 freeSpeed = (5900 * 2 * pi)/60; % No load speed rad/s
-freeCurrent = 0.3; % A
 
-stallTorque = 0.19; % N * m
 stallCurrent = 11; % A
 
 backEMFconstant = maxVoltage / freeSpeed; % V / Rad/s or N * m /A
@@ -60,13 +60,19 @@ timer = tic;
 
 data = animatedline;
 hold on;
+yline(targetPosition)
 
+timeToGoal = 0.0;
 
-while (true)
+targetControlPeriod = controlPeriod + randFactor * randn/1000;
+running = true;
+timeFlag = true;
+
+while (running)
     timeStep = toc(timer);
     time = toc(overallTime);
 
-    if timeStep >= controlPeriod
+    if timeStep >= targetControlPeriod
 
         %% Update system to real time
         
@@ -138,7 +144,7 @@ while (true)
 
         timer = tic;
         addpoints(data, time, position)
-        xlim([time - 5, time])
+        xlim([max(time - 5, 0), time])
         ylim([0 inf])
         drawnow limitrate;
 
@@ -159,9 +165,22 @@ while (true)
         fprintf("Motor Torque At Shaft: %.2f\n", motorTorqueAtShaft)
         fprintf("Gravity Torque At Shaft: %.2f\n", gravityTorqueAtShaft)
 
+        targetControlPeriod = controlPeriod + randFactor*randn/1000;
+
+        if (abs(controller.positionError) < 0.5 && abs(angularVelocity) < 5.0 && timeFlag)
+            timeToGoal = time;
+            display(timeToGoal)
+            xline(timeToGoal)
+            timeFlag = false;
+            targetPosition = 200;
+            angularTargetPosition = 28 * ((targetPosition / (2 * pi * spoolRadius * 100)) / reductionRatio); % ticks
+        end
+        
+        if (time >= 5)
+            running = false;
+        end
 
     end
 
-    
-
 end
+display(timeToGoal)
