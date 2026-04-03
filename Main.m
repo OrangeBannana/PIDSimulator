@@ -1,186 +1,117 @@
 clear, clc, clf;
 
-p = 0.003;
-i = 0.001;
-d = 0.00018;
-f = 0.110;
-
-randFactor = 5;
-
-% System Constants
-
-mass = 1.2; % Kg
-
-reductionRatio = 12/60; % Input Teeth : Output Teeth
-
-spoolRadius = 20/1000; % Spool Radius in Meters
-
-controlPeriod = 40 / 1000; % Time between updates in seconds
-
-gravityConstant = -9.81; % m/s^2
-
+%% --- Shared Constants ---
+mass = 1.2; 
+reductionRatio = 12/60; 
+spoolRadius = 20/1000; 
+controlPeriod = 10 / 1000; 
+gravityConstant = -9.81; 
 systemInertiaAtShaft = mass * spoolRadius^2;
-
 motorCount = 2;
+kineticFrictionForce = 0.1 * gravityConstant * mass;
+staticFrictionForce = 0.1 * gravityConstant * mass;
+maxVoltage = 12; 
+freeSpeed = (5900 * 2 * pi)/60; 
+stallCurrent = 11; 
+backEMFconstant = maxVoltage / freeSpeed; 
+armatureResistance = maxVoltage / stallCurrent; 
+targetPositionCm = 100;
+simTimeLimit = 5.0;
 
-kineticFrictionForce = 0.5 * gravityConstant * mass;
-staticFrictionForce = 1.5 * gravityConstant * mass;
+%% --- Run Simulations ---
+[timePID, posPID] = runSim(false);
+[timeOpt, posOpt] = runSim(true);
 
+%% --- Plotting Results ---
+figure(1); hold on;
+plot(timePID, posPID, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Standard PID');
+plot(timeOpt, posOpt, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Optimal Regen');
+yline(targetPositionCm, 'k:', 'Target');
+xlabel('Time (s)'); ylabel('Position (cm)');
+title('FTC Motor Control Comparison');
+legend('Location', 'southeast');
+grid on;
+ylim([0 targetPositionCm * 1.2]);
 
-% Motor Constants
+%% --- Simulation Function ---
+function [t_out, p_out] = runSim(isOptimal)
+    % Import constants from caller workspace
+    ws = 'caller';
+    mass = evalin(ws, 'mass'); reductionRatio = evalin(ws, 'reductionRatio');
+    spoolRadius = evalin(ws, 'spoolRadius'); controlPeriod = evalin(ws, 'controlPeriod');
+    gravityConstant = evalin(ws, 'gravityConstant'); systemInertiaAtShaft = evalin(ws, 'systemInertiaAtShaft');
+    motorCount = evalin(ws, 'motorCount'); kineticFrictionForce = evalin(ws, 'kineticFrictionForce');
+    staticFrictionForce = evalin(ws, 'staticFrictionForce'); maxVoltage = evalin(ws, 'maxVoltage');
+    backEMFconstant = evalin(ws, 'backEMFconstant'); armatureResistance = evalin(ws, 'armatureResistance');
+    targetPositionCm = evalin(ws, 'targetPositionCm'); simTimeLimit = evalin(ws, 'simTimeLimit');
 
-maxVoltage = 12; % Volts
-
-freeSpeed = (5900 * 2 * pi)/60; % No load speed rad/s
-
-stallCurrent = 11; % A
-
-backEMFconstant = maxVoltage / freeSpeed; % V / Rad/s or N * m /A
-
-armatureResistance = maxVoltage / stallCurrent; % Ohms
-
-% Working Variables
-
-angularPosition = 0.0;
-angularVelocity = 0.0;
-angularAcceleration = 0.0;
-
-previousError = 0.0;
-
-controller = Controller(p, i, d);
-
-integralSum = 0.0;
-
-% Situation Variables
-targetPosition = 100; % cm
-angularTargetPosition = 28 * ((targetPosition / (2 * pi * spoolRadius * 100)) / reductionRatio); % ticks
-
-overallTime = tic;
-timer = tic;
-
-data = animatedline;
-hold on;
-yline(targetPosition)
-
-timeToGoal = 0.0;
-
-targetControlPeriod = controlPeriod + randFactor * randn/1000;
-running = true;
-timeFlag = true;
-
-while (running)
-    timeStep = toc(timer);
-    time = toc(overallTime);
-
-    if timeStep >= targetControlPeriod
-
-        %% Update system to real time
+    % State Variables
+    angPos = 0; angVel = 0; angAcc = 0;
+    t = 0; prevError = 0; integralSum = 0;
+    
+    % Data storage
+    t_out = []; p_out = [];
+    
+    % PID Gains
+    p_gain = 0.003; i_gain = 0.001; d_gain = 0.00018; f_gain = 0.110;
+    
+    while t < simTimeLimit
+        % Target in ticks
+        targetTicks = 28 * ((targetPositionCm / (2 * pi * spoolRadius * 100)) / reductionRatio);
+        currTicks = (angPos / (2 * pi)) * 28;
+        errorTicks = targetTicks - currTicks;
         
-        % Calculate Angular Position & update angular velocity
-        angularPosition = angularPosition + timeStep * angularVelocity + (1/2) * angularAcceleration * timeStep^2;
-        
-        angularVelocity = angularVelocity + angularAcceleration * timeStep;
-
-        % Find linear position in cm
-        position = ((angularPosition / (2 * pi)) * reductionRatio) * 2 * pi * spoolRadius * 100;
-        
-        %% Update Controller
-        
-        angularPositionTicks = (angularPosition / (2 * pi)) * 28;
-        controller = controller.update(angularPositionTicks, angularTargetPosition); % Controller output is clamped [-1,1]
-        
-        errorDeriv = (controller.positionError - previousError) / timeStep;
-        previousError = controller.positionError;
-
-        %integralSum = integralSum + controller.positionError * timeStep;
-        integralSum = integralSum + controller.positionError * timeStep;
-
-        if (abs(integralSum) > 1)
-            integralSum = 1 * sign(integralSum);
-        end
-
-        controlSum = controller.output + f + errorDeriv * d + i * integralSum;
-
-        appliedPower = clip(controlSum, -1, 1);
-
-        %integralSum = integralSum - (i * (controlSum - appliedPower) * timeStep);
-
-        appliedVoltage = appliedPower * maxVoltage ;
-
-
-        %% Calculate Motor Torque
-
-        backEMFVoltage = backEMFconstant * angularVelocity;
-        netDrivingVoltage = appliedVoltage - backEMFVoltage;
-
-        armatureCurrent = netDrivingVoltage / armatureResistance;
-
-        motorTorque = backEMFconstant * armatureCurrent;
-
-        %% Calculate Net Torque
-
-        motorTorqueAtShaft = (motorTorque * motorCount) / reductionRatio;
-
-        gravityTorqueAtShaft = gravityConstant * mass * spoolRadius;
-        
-        if (abs(angularVelocity) < 0.1) 
-            frictionTorqueAtShaft = sign(motorTorqueAtShaft + gravityTorqueAtShaft) * staticFrictionForce * spoolRadius;
-            if (abs(frictionTorqueAtShaft) >= abs(motorTorqueAtShaft + gravityTorqueAtShaft))
-                netTorqueAtShaft = 0;
-                angularVelocity = 0;
-            else
-                frictionTorqueAtShaft = sign(angularVelocity) * kineticFrictionForce * spoolRadius;
-                netTorqueAtShaft = motorTorqueAtShaft + gravityTorqueAtShaft + frictionTorqueAtShaft;
-            end
-
+        %% 1. Controller Logic
+        if ~isOptimal
+            % Standard PID + Feedforward
+            deriv = (errorTicks - prevError) / controlPeriod;
+            integralSum = clip(integralSum + errorTicks * controlPeriod, -1, 1);
+            % Simplified PID logic for sim
+            appliedVoltage = clip((errorTicks * p_gain + integralSum * i_gain + deriv * d_gain + f_gain) * maxVoltage, -12, 12);
+            prevError = errorTicks;
         else
-            frictionTorqueAtShaft = sign(angularVelocity) * kineticFrictionForce * spoolRadius;
-            netTorqueAtShaft = motorTorqueAtShaft + gravityTorqueAtShaft + frictionTorqueAtShaft;
+            % Optimal Control with Sprint/Brake Logic
+            stoppingDistRad = (systemInertiaAtShaft * armatureResistance * (angVel/reductionRatio)) / (backEMFconstant^2);
+            deltaTheta = (targetTicks - currTicks) * (2 * pi / 28);
+            gravityTorque = gravityConstant * mass * spoolRadius;
+            gravityV = (abs(gravityTorque) * reductionRatio * armatureResistance) / (backEMFconstant * motorCount);
+
+            if abs(deltaTheta) > abs(stoppingDistRad)
+                appliedVoltage = sign(deltaTheta) * maxVoltage;
+            else
+                appliedVoltage = (backEMFconstant * (angVel/reductionRatio)) + ...
+                                 (deltaTheta * backEMFconstant^2) / (systemInertiaAtShaft * armatureResistance);
+            end
+            appliedVoltage = clip(appliedVoltage + gravityV, -12, 12);
+        end
+
+        %% 2. Physics Engine
+        motorVel = angVel / reductionRatio;
+        backEMF = backEMFconstant * motorVel;
+        netV = appliedVoltage - backEMF;
+        motorT = (backEMFconstant * (netV / armatureResistance) * motorCount) / reductionRatio;
+        gravT = gravityConstant * mass * spoolRadius;
+        
+        % Friction model
+        if abs(angVel) < 0.1
+            fricT = sign(motorT + gravT) * staticFrictionForce * spoolRadius;
+            netT = motorT + gravT + fricT;
+            if abs(fricT) >= abs(motorT + gravT), netT = 0; angVel = 0; end
+        else
+            netT = motorT + gravT + sign(angVel) * kineticFrictionForce * spoolRadius;
         end
         
-        %% Calculate angular position, velocity, and acceleration
-
-        angularAcceleration = netTorqueAtShaft / systemInertiaAtShaft;
-
-        timer = tic;
-        addpoints(data, time, position)
-        xlim([max(time - 5, 0), time])
-        ylim([0 inf])
-        drawnow limitrate;
-
-        fprintf("\n\nNEXT TIME STEP\n")
-        fprintf("Time Step: %.2f\n", timeStep)
-        fprintf("Position: %.2f\n", position)
-        fprintf("Angular Position: %.2f\n", angularPosition)
-        fprintf("Angular Velocity: %.2f\n", angularVelocity)
-        fprintf("Angular Acceleration: %.2f\n", angularAcceleration)
-        fprintf("Controller pGain: %.2f\n", controller.pGain)
-        fprintf("Controller p: %.2f\n", controller.p)
-        fprintf("Controller Output: %.2f\n", controller.output)
-        fprintf("Controller Position Error: %.2f\n", controller.positionError)
-        fprintf("Overall Time: %.2f\n", time)
-        fprintf("Net Torque: %.2f\n", netTorqueAtShaft)
-        fprintf("Applied Voltage: %.2f\n", appliedVoltage)
-        fprintf("Motor Torque: %.2f\n", motorTorque)
-        fprintf("Motor Torque At Shaft: %.2f\n", motorTorqueAtShaft)
-        fprintf("Gravity Torque At Shaft: %.2f\n", gravityTorqueAtShaft)
-
-        targetControlPeriod = controlPeriod + randFactor*randn/1000;
-
-        if (abs(controller.positionError) < 0.5 && abs(angularVelocity) < 5.0 && timeFlag)
-            timeToGoal = time;
-            display(timeToGoal)
-            xline(timeToGoal)
-            timeFlag = false;
-            targetPosition = 200;
-            angularTargetPosition = 28 * ((targetPosition / (2 * pi * spoolRadius * 100)) / reductionRatio); % ticks
-        end
+        angAcc = netT / systemInertiaAtShaft;
+        angPos = angPos + controlPeriod * angVel + 0.5 * angAcc * controlPeriod^2;
+        angVel = angVel + angAcc * controlPeriod;
         
-        if (time >= 5)
-            running = false;
-        end
-
+        % Log Data
+        t = t + controlPeriod;
+        t_out(end+1) = t;
+        p_out(end+1) = ((angPos / (2 * pi)) * reductionRatio) * 2 * pi * spoolRadius * 100;
     end
-
 end
-display(timeToGoal)
+
+function out = clip(val, low, high)
+    out = min(max(val, low), high);
+end
