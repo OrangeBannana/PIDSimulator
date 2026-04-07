@@ -56,10 +56,10 @@ function renderControllers() {
     gains.className = 'ctrl-gains';
 
     const fields = [
-      { label: 'Kp', key: 'p', step: 0.001 },
-      { label: 'Ki', key: 'i', step: 0.0001 },
-      { label: 'Kd', key: 'd', step: 0.0001 },
-      { label: 'Kf', key: 'f', step: 0.01 }
+      { label: 'Kp, V/N', key: 'p', step: 0.001 },
+      { label: 'Ki, V/(N • s)', key: 'i', step: 0.0001 },
+      { label: 'Kd, V • s/N', key: 'd', step: 0.0001 },
+      { label: 'Kf, % max V', key: 'f', step: 0.01 }
     ];
 
     fields.forEach(field => {
@@ -276,8 +276,7 @@ function getMech() {
   };
 }
 
-function pidCalc(ctrl, state, mech, targetCm) {
-  const dt = getVal('dt') / 1000;
+function pidCalc(ctrl, state, mech, targetCm, dt) {
   const TICKS_PER_REV = 28;
   const targetTicks = TICKS_PER_REV * ((targetCm / (2 * Math.PI * mech.spoolR * 100)) / mech.ratio);
   const currTicks = (state.pos / (2 * Math.PI)) * TICKS_PER_REV;
@@ -296,19 +295,39 @@ function initSim() {
   const mech = getMech();
   const target = getVal('targetInput');
   const totalTime = getVal('simTime');
+  const loopVariance = getVal('loopVariance') / 1000; // Convert ms to seconds
   const states = controllers.map(() => ({ pos: 0, vel: 0, t: 0 }));
   controllers.forEach(ctrl => {
     ctrl.integral = 0;
     ctrl.prevErr = 0;
     ctrl.ki = ctrl.i;
   });
-  return { dt, motor, mech, target, totalTime, states, done: false };
+  return { dt, motor, mech, target, totalTime, states, done: false, loopVariance };
+}
+
+function normalRandom(mean = 0, std = 1) {
+  // Box-Muller transform for normal distribution
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return z0 * std + mean;
 }
 
 function stepBatch(batchSize = 80) {
   if (!simState || simState.done) return;
 
-  const { dt, motor, mech, target } = simState;
+  const { dt, motor, mech, target, loopVariance } = simState;
+
+  // Add initial data points at t=0 if this is the first call
+  if (simState.states[0].t === 0 && chart.data.datasets[0].data.length === 0) {
+    controllers.forEach((ctrl, index) => {
+      chart.data.datasets[index].data.push({ x: 0, y: 0 });
+    });
+    const targetDataset = chart.data.datasets[controllers.length];
+    if (targetDataset.data.length === 0) {
+      targetDataset.data.push({ x: 0, y: target });
+    }
+  }
 
   for (let step = 0; step < batchSize; step++) {
     let allDone = true;
@@ -318,15 +337,25 @@ function stepBatch(batchSize = 80) {
       if (state.t >= simState.totalTime) return;
 
       allDone = false;
-      const v = pidCalc(ctrl, state, mech, target);
+
+      // Apply random timing variation if loopVariance > 0
+      let stepDt = dt;
+      if (loopVariance > 0) {
+        const randomVariation = normalRandom(0, loopVariance / 2);
+        // Clamp to ±2x the loopVariance
+        const clampedVariation = Math.max(-2 * loopVariance, Math.min(2 * loopVariance, randomVariation));
+        stepDt = Math.max(0.001, dt + clampedVariation); // Ensure dt doesn't go negative or too small
+      }
+
+      const v = pidCalc(ctrl, state, mech, target, stepDt);
       const torqueMotor = motor.getTorque(v, state.vel);
       const torqueLoad = torqueMotor / mech.ratio + mech.getGravityTorque();
       const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
       const acc = netT / mech.getInertia();
 
-      state.pos += dt * state.vel;
-      state.vel += acc * dt;
-      state.t += dt;
+      state.pos += stepDt * state.vel;
+      state.vel += acc * stepDt;
+      state.t += stepDt;
 
       chart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +mech.getLinearPos(state.pos).toFixed(3) });
     });
