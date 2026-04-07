@@ -4,6 +4,7 @@ let chart = null;
 let animFrame = null;
 let isRunning = false;
 let simState = null;
+let mousePos = { x: null, y: null };
 
 const getEl = id => document.getElementById(id);
 const getVal = id => parseFloat(getEl(id).value) || 0;
@@ -152,7 +153,39 @@ function rebuildChart() {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      plugins: { legend: { display: false } },
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          mode: 'index',
+          intersect: false,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 12, weight: 'bold' },
+          bodyFont: { size: 11 },
+          borderColor: 'rgba(255, 255, 255, 0.2)',
+          borderWidth: 1,
+          displayColors: true,
+          callbacks: {
+            title: (context) => {
+              if (context.length > 0) {
+                return `Time: ${context[0].raw.x.toFixed(3)}s`;
+              }
+              return '';
+            },
+            label: (context) => {
+              return `${context.dataset.label}: ${context.raw.y.toFixed(2)} cm`;
+            }
+          }
+        },
+        verticalLineCursor: {
+          id: 'verticalLineCursor'
+        }
+      },
       scales: {
         x: {
           type: 'linear',
@@ -166,7 +199,36 @@ function rebuildChart() {
           grid: { color: 'rgba(128,128,128,0.12)' }
         }
       }
-    }
+    },
+    plugins: [{
+      id: 'verticalLineCursor',
+      afterDatasetsDraw(chart) {
+        if (!chart.tooltip?.active?.length) return;
+        
+        const { ctx, chartArea: { left, top, width, height }, scales: { x } } = chart;
+        const canvasRect = ctx.canvas.getBoundingClientRect();
+        
+        const isInChart = mousePos.x >= left + canvasRect.left && 
+                         mousePos.x <= left + width + canvasRect.left &&
+                         mousePos.y >= top + canvasRect.top && 
+                         mousePos.y <= top + height + canvasRect.top;
+        
+        if (isInChart && chart.tooltip.active[0]) {
+          const xValue = chart.tooltip.active[0].raw.x;
+          const xPixel = left + ((xValue - x.min) / (x.max - x.min)) * width;
+          
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(xPixel, top);
+          ctx.lineTo(xPixel, top + height);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }]
   });
 
   renderLegend();
@@ -383,6 +445,11 @@ function setupEvents() {
       }
     });
   });
+  
+  // Track mouse position for crosshair
+  document.addEventListener('mousemove', (e) => {
+    mousePos = { x: e.clientX, y: e.clientY };
+  });
 }
 
 function updateDarkModeIcon() {
@@ -405,6 +472,6 @@ window.addEventListener('DOMContentLoaded', () => {
   
   updateDarkModeIcon();
   setupEvents();
-  addController(0.014, 0, 0.00082, 0.1, 'Tuned PID');
+  addController(0.014, 0, 0.00082, 0.1, 'PID 1');
   rebuildChart();
 });
