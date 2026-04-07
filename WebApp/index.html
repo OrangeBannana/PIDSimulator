@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PID Mechanism Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <div class="section">
+        <div class="section-title">Target position</div>
+        <div class="target-row">
+          <label for="target">Position</label>
+          <input type="number" id="target" value="100" step="1" min="1" max="300">
+          <span>cm</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">System — motor</div>
+        <div class="row2">
+          <div class="field"><label for="motorCount">Count</label><input type="number" id="motorCount" value="2" min="1" max="6" step="1"></div>
+          <div class="field"><label for="maxV">Max voltage (V)</label><input type="number" id="maxV" value="12" step="0.5"></div>
+          <div class="field"><label for="stallTorque">Stall torque (Nm)</label><input type="number" id="stallTorque" value="0.19" step="0.01"></div>
+          <div class="field"><label for="freeRPM">Free speed (RPM)</label><input type="number" id="freeRPM" value="5900" step="100"></div>
+          <div class="field"><label for="stallCurrent">Stall current (A)</label><input type="number" id="stallCurrent" value="11" step="0.5"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">System — mechanism</div>
+        <div class="row2">
+          <div class="field"><label for="mass">Mass (kg)</label><input type="number" id="mass" value="1.2" step="0.1"></div>
+          <div class="field"><label for="ratio">Gear ratio</label><input type="number" id="ratio" value="0.2" step="0.01"></div>
+          <div class="field"><label for="spoolR">Spool radius (m)</label><input type="number" id="spoolR" value="0.02" step="0.001"></div>
+          <div class="field"><label for="fricCoeff">Friction coeff μ</label><input type="number" id="fricCoeff" value="0.5" step="0.05"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">PID controllers</div>
+        <div id="ctrlList"></div>
+        <button class="add-btn" id="addCtrlButton">+ add controller</button>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Simulation</div>
+        <div class="row2">
+          <div class="field"><label for="simTime">Duration (s)</label><input type="number" id="simTime" value="3" step="0.5" min="0.5"></div>
+          <div class="field"><label for="dt">Time step (ms)</label><input type="number" id="dt" value="26" step="1" min="1"></div>
+        </div>
+        <button class="run-btn" id="runBtn">Run simulation</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="legend-wrap" id="legend"></div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+      <div class="status-bar" id="status">Configure controllers and press run.</div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
