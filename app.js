@@ -342,8 +342,8 @@ function stepBatch(batchSize = 80) {
       let stepDt = dt;
       if (loopVariance > 0) {
         const randomVariation = normalRandom(0, loopVariance / 2);
-        // Clamp to ±2x the loopVariance
-        const clampedVariation = Math.max(-2 * loopVariance, Math.min(2 * loopVariance, randomVariation));
+        // Clamp to ±3x the loopVariance
+        const clampedVariation = Math.max(-3 * loopVariance, Math.min(3 * loopVariance, randomVariation));
         stepDt = Math.max(0.001, dt + clampedVariation); // Ensure dt doesn't go negative or too small
       }
 
