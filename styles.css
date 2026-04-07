@@ -150,6 +150,11 @@ body {
   width: 100%;
 }
 
+.checkbox-field input[type=checkbox] {
+  width: auto;
+  margin-right: 8px;
+}
+
 /* Remove number input spinner arrows */
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button {

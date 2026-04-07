@@ -256,6 +256,9 @@ function getMech() {
   const ratio = getVal('ratio');
   const spoolR = getVal('spoolR');
   const fricCoeff = getVal('fricCoeff');
+  const cascadeRigging = getEl('cascadeRigging').checked;
+  const stages = cascadeRigging ? getVal('stages') : 1;
+  const counterSpring = getVal('counterSpring');
   const g = -9.81;
   const kineticFric = fricCoeff * Math.abs(g) * mass * spoolR;
   return {
@@ -264,14 +267,29 @@ function getMech() {
     spoolR,
     g,
     kineticFric,
+    cascadeRigging,
+    stages,
+    counterSpring,
+    getEffectiveRatio() {
+      return cascadeRigging ? ratio / stages : ratio;
+    },
+    getDistanceMultiplier() {
+      return cascadeRigging ? stages : 1;
+    },
     getInertia() {
       return mass * spoolR * spoolR;
     },
     getGravityTorque() {
       return g * mass * spoolR;
     },
+    getCounterSpringTorque() {
+      // Counterspring force acts vertically, so torque = force * radius
+      return counterSpring * spoolR;
+    },
     getLinearPos(angPos) {
-      return ((angPos / (2 * Math.PI)) * ratio) * 2 * Math.PI * spoolR * 100;
+      const effectiveRatio = this.getEffectiveRatio();
+      const distanceMultiplier = this.getDistanceMultiplier();
+      return ((angPos / (2 * Math.PI)) * effectiveRatio * distanceMultiplier) * 2 * Math.PI * spoolR * 100;
     }
   };
 }
@@ -349,7 +367,8 @@ function stepBatch(batchSize = 80) {
 
       const v = pidCalc(ctrl, state, mech, target, stepDt);
       const torqueMotor = motor.getTorque(v, state.vel);
-      const torqueLoad = torqueMotor / mech.ratio + mech.getGravityTorque();
+      const effectiveRatio = mech.getEffectiveRatio();
+      const torqueLoad = torqueMotor / effectiveRatio + mech.getGravityTorque() + mech.getCounterSpringTorque();
       const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
       const acc = netT / mech.getInertia();
 
@@ -473,6 +492,16 @@ function setupEvents() {
         btn.textContent = content.classList.contains('collapsed') ? '+' : '−';
       }
     });
+  });
+  
+  // Cascade rigging checkbox
+  getEl('cascadeRigging').addEventListener('change', (e) => {
+    const stagesField = getEl('stagesField');
+    if (e.target.checked) {
+      stagesField.style.display = 'block';
+    } else {
+      stagesField.style.display = 'none';
+    }
   });
   
   // Track mouse position for crosshair
