@@ -1,6 +1,6 @@
 const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 let controllers = [];
-let chart = null;
+let charts = {};
 let animFrame = null;
 let isRunning = false;
 let simState = null;
@@ -90,154 +90,110 @@ function renderControllers() {
     card.append(gains, removeBtn);
     list.appendChild(card);
   });
-
-  renderLegend();
-}
-
-function renderLegend() {
-  const legend = getEl('legend');
-  legend.innerHTML = '';
-
-  controllers.forEach(ctrl => {
-    const item = document.createElement('div');
-    item.className = 'legend-item';
-
-    const dot = document.createElement('div');
-    dot.className = 'legend-dot';
-    dot.style.background = ctrl.color;
-
-    const label = document.createElement('span');
-    label.textContent = ctrl.name;
-
-    item.append(dot, label);
-    legend.appendChild(item);
-  });
-
-  const targetItem = document.createElement('div');
-  targetItem.className = 'legend-item';
-  targetItem.innerHTML = '<div class="legend-dot" style="background:#888;opacity:0.6;border-top:2px dashed #888;height:0;margin-top:1px"></div><span>target</span>';
-  legend.appendChild(targetItem);
 }
 
 function rebuildChart() {
-  const ctx = getEl('chart');
-  if (chart) {
-    chart.destroy();
-    chart = null;
-  }
-
-  const datasets = controllers.map(ctrl => ({
-    label: ctrl.name,
-    data: [],
-    borderColor: ctrl.color,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    pointRadius: 0,
-    tension: 0.2
-  }));
-
-  datasets.push({
-    label: 'target',
-    data: [],
-    borderColor: '#888',
-    borderDash: [5, 4],
-    borderWidth: 1.5,
-    pointRadius: 0,
-    tension: 0
+  // Destroy existing charts
+  Object.values(charts).forEach(chart => {
+    if (chart) chart.destroy();
   });
+  charts = {};
 
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: { datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: {
-        mode: 'index',
-        intersect: false
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          enabled: true,
+  const chartConfigs = [
+    { id: 'positionChart', title: 'Position vs Time', color: '#00d4ff', unit: 'cm' },
+    { id: 'velocityChart', title: 'Velocity vs Time', color: '#7fff6b', unit: 'cm/s' },
+    { id: 'accelChart', title: 'Acceleration vs Time', color: '#ff6b35', unit: 'cm/s²' },
+    { id: 'currentChart', title: 'Current vs Time', color: '#ffcc00', unit: 'A' },
+    { id: 'voltageChart', title: 'Applied Voltage vs Time', color: '#c084fc', unit: 'V' }
+  ];
+
+  chartConfigs.forEach(config => {
+    const ctx = getEl(config.id);
+    if (!ctx) return;
+
+    const datasets = controllers.map((ctrl, index) => ({
+      label: ctrl.name,
+      data: [],
+      borderColor: ctrl.color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.2
+    }));
+
+    // Add target line for position chart
+    if (config.id === 'positionChart') {
+      datasets.push({
+        label: 'target',
+        data: [],
+        borderColor: '#888',
+        borderDash: [5, 4],
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0
+      });
+    }
+
+    charts[config.id] = new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: {
           mode: 'index',
-          intersect: false,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          padding: 12,
-          titleFont: { size: 12, weight: 'bold' },
-          bodyFont: { size: 11 },
-          borderColor: 'rgba(255, 255, 255, 0.2)',
-          borderWidth: 1,
-          displayColors: true,
-          callbacks: {
-            title: (context) => {
-              if (context.length > 0) {
-                return `Time: ${context[0].raw.x.toFixed(3)}s`;
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            padding: 12,
+            titleFont: { size: 12, weight: 'bold' },
+            bodyFont: { size: 11 },
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            displayColors: true,
+            callbacks: {
+              title: (context) => {
+                if (context.length > 0) {
+                  return `Time: ${context[0].raw.x.toFixed(3)}s`;
+                }
+                return '';
+              },
+              label: (context) => {
+                return `${context.dataset.label}: ${context.raw.y.toFixed(2)} ${config.unit}`;
               }
-              return '';
-            },
-            label: (context) => {
-              return `${context.dataset.label}: ${context.raw.y.toFixed(2)} cm`;
             }
           }
         },
-        verticalLineCursor: {
-          id: 'verticalLineCursor'
-        }
-      },
-      scales: {
-        x: {
-          type: 'linear',
-          title: { display: true, text: 'time (s)', font: { size: 11 }, color: '#888' },
-          ticks: { font: { size: 11 }, color: '#888', maxTicksLimit: 10, callback: v => v.toFixed(2) },
-          grid: { color: 'rgba(128,128,128,0.12)' }
-        },
-        y: {
-          title: { display: true, text: 'position (cm)', font: { size: 11 }, color: '#888' },
-          ticks: { font: { size: 11 }, color: '#888', callback: v => v.toFixed(1) },
-          grid: { color: 'rgba(128,128,128,0.12)' }
+        scales: {
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'time (s)', font: { size: 11 }, color: '#888' },
+            ticks: { font: { size: 11 }, color: '#888', maxTicksLimit: 10, callback: v => v.toFixed(2) },
+            grid: { color: 'rgba(128,128,128,0.12)' }
+          },
+          y: {
+            title: { display: true, text: `${config.title.split(' ')[0]} (${config.unit})`, font: { size: 11 }, color: '#888' },
+            ticks: { font: { size: 11 }, color: '#888', callback: v => v.toFixed(1) },
+            grid: { color: 'rgba(128,128,128,0.12)' }
+          }
         }
       }
-    },
-    plugins: [{
-      id: 'verticalLineCursor',
-      afterDatasetsDraw(chart) {
-        if (!chart.tooltip?.active?.length) return;
-        
-        const { ctx, chartArea: { left, top, width, height }, scales: { x } } = chart;
-        const canvasRect = ctx.canvas.getBoundingClientRect();
-        
-        const isInChart = mousePos.x >= left + canvasRect.left && 
-                         mousePos.x <= left + width + canvasRect.left &&
-                         mousePos.y >= top + canvasRect.top && 
-                         mousePos.y <= top + height + canvasRect.top;
-        
-        if (isInChart && chart.tooltip.active[0]) {
-          const xValue = chart.tooltip.active[0].raw.x;
-          const xPixel = left + ((xValue - x.min) / (x.max - x.min)) * width;
-          
-          ctx.save();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-          ctx.setLineDash([5, 5]);
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(xPixel, top);
-          ctx.lineTo(xPixel, top + height);
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
-    }]
+    });
   });
-
-  renderLegend();
 }
 
 function getMotor() {
   const maxV = getVal('maxV');
   const freeRPM = getVal('freeRPM');
   const stallCurrent = getVal('stallCurrent');
+  const stallTorque = getVal('stallTorque');
   const kt = maxV / ((freeRPM * 2 * Math.PI) / 60);
   const R = maxV / stallCurrent;
   const count = getVal('motorCount');
@@ -245,8 +201,12 @@ function getMotor() {
     kt,
     R,
     count,
+    stallTorque,
     getTorque(v, omega) {
       return (kt * (v - kt * omega) / R) * count;
+    },
+    getCurrent(v, omega) {
+      return ((v - kt * omega) / R) * count;
     }
   };
 }
@@ -337,11 +297,15 @@ function stepBatch(batchSize = 80) {
   const { dt, motor, mech, target, loopVariance } = simState;
 
   // Add initial data points at t=0 if this is the first call
-  if (simState.states[0].t === 0 && chart.data.datasets[0].data.length === 0) {
+  if (simState.states[0].t === 0 && charts.positionChart?.data.datasets[0].data.length === 0) {
     controllers.forEach((ctrl, index) => {
-      chart.data.datasets[index].data.push({ x: 0, y: 0 });
+      charts.positionChart.data.datasets[index].data.push({ x: 0, y: 0 });
+      charts.velocityChart.data.datasets[index].data.push({ x: 0, y: 0 });
+      charts.accelChart.data.datasets[index].data.push({ x: 0, y: 0 });
+      charts.currentChart.data.datasets[index].data.push({ x: 0, y: 0 });
+      charts.voltageChart.data.datasets[index].data.push({ x: 0, y: 0 });
     });
-    const targetDataset = chart.data.datasets[controllers.length];
+    const targetDataset = charts.positionChart.data.datasets[controllers.length];
     if (targetDataset.data.length === 0) {
       targetDataset.data.push({ x: 0, y: target });
     }
@@ -372,17 +336,32 @@ function stepBatch(batchSize = 80) {
       const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
       const acc = netT / mech.getInertia();
 
+      // Calculate current draw
+      const current = motor.getCurrent(v, state.vel);
+
+      // Store previous velocity for acceleration calculation
+      const prevVel = state.vel;
+
       state.pos += stepDt * state.vel;
       state.vel += acc * stepDt;
       state.t += stepDt;
 
-      chart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +mech.getLinearPos(state.pos).toFixed(3) });
+      // Calculate acceleration (change in velocity over time)
+      const acceleration = (state.vel - prevVel) / stepDt;
+
+      const position = +mech.getLinearPos(state.pos).toFixed(3);
+
+      charts.positionChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: position });
+      charts.velocityChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +state.vel.toFixed(3) });
+      charts.accelChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +acceleration.toFixed(3) });
+      charts.currentChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +current.toFixed(3) });
+      charts.voltageChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +v.toFixed(3) });
     });
 
     const currentTime = Math.max(...simState.states.map(s => s.t));
-    const targetDataset = chart.data.datasets[controllers.length].data;
-    if (targetDataset.length === 0 || currentTime - targetDataset[targetDataset.length - 1].x > dt * 5) {
-      targetDataset.push({ x: +currentTime.toFixed(4), y: target });
+    const targetDataset = charts.positionChart.data.datasets[controllers.length];
+    if (targetDataset && targetDataset.data.length === 0 || currentTime - targetDataset.data[targetDataset.data.length - 1].x > dt * 5) {
+      targetDataset.data.push({ x: +currentTime.toFixed(4), y: target });
     }
 
     if (allDone) {
@@ -391,8 +370,14 @@ function stepBatch(batchSize = 80) {
     }
   }
 
-  autoScaleY();
-  chart.update('none');
+  // Update all charts
+  Object.values(charts).forEach(chart => {
+    if (chart) {
+      autoScaleY(chart);
+      chart.update('none');
+    }
+  });
+
   const progress = Math.round((Math.max(...simState.states.map(s => s.t)) / simState.totalTime) * 100);
   getEl('status').textContent = simState.done ? 'Simulation complete.' : `Simulating... ${progress}%`;
 
@@ -403,7 +388,7 @@ function stepBatch(batchSize = 80) {
   }
 }
 
-function autoScaleY() {
+function autoScaleY(chart) {
   if (!chart) return;
   const target = getVal('targetInput');
   const allValues = [target];
@@ -418,16 +403,14 @@ function autoScaleY() {
 }
 
 function updateTargetLine() {
-  if (!chart) return;
+  if (!charts.positionChart) return;
   const target = getVal('targetInput');
   const total = getVal('simTime');
-  const targetDataset = chart.data.datasets[controllers.length];
+  const targetDataset = charts.positionChart.data.datasets[controllers.length];
   if (!targetDataset) return;
   targetDataset.data = [{ x: 0, y: target }, { x: total, y: target }];
-  chart.options.scales.x.min = 0;
-  chart.options.scales.x.max = total;
-  autoScaleY();
-  chart.update('none');
+  autoScaleY(charts.positionChart);
+  charts.positionChart.update('none');
 }
 
 function toggleRun() {
@@ -442,7 +425,7 @@ function toggleRun() {
   }
 
   isRunning = true;
-  getEl('runBtn').textContent = 'Stop';
+  getEl('runBtn').textContent = '⏹ Stop';
   getEl('runBtn').classList.add('running');
 
   rebuildChart();
@@ -450,9 +433,15 @@ function toggleRun() {
 
   const target = getVal('targetInput');
   const total = getVal('simTime');
-  chart.data.datasets[controllers.length].data = [{ x: 0, y: target }, { x: total, y: target }];
-  chart.options.scales.x.min = 0;
-  chart.options.scales.x.max = total;
+  const targetDataset = charts.positionChart.data.datasets[controllers.length];
+  if (targetDataset) {
+    targetDataset.data = [{ x: 0, y: target }, { x: total, y: target }];
+  }
+
+  // Hide placeholder, show results
+  getEl('placeholder').style.display = 'none';
+  getEl('results').style.display = 'flex';
+
   animFrame = requestAnimationFrame(() => stepBatch(80));
 }
 
@@ -461,8 +450,30 @@ function stopRun() {
   if (animFrame) {
     cancelAnimationFrame(animFrame);
   }
-  getEl('runBtn').textContent = 'Run simulation';
+  getEl('runBtn').textContent = '▶ Run Simulation';
   getEl('runBtn').classList.remove('running');
+}
+
+function toggleSection(sectionId) {
+  const body = getEl(sectionId + '-body');
+  const arrow = getEl(sectionId + '-arrow');
+  if (body && arrow) {
+    const isOpen = body.classList.contains('collapsed');
+    if (isOpen) {
+      body.classList.remove('collapsed');
+      arrow.classList.add('open');
+      arrow.textContent = '▶';
+    } else {
+      body.classList.add('collapsed');
+      arrow.classList.remove('open');
+      arrow.textContent = '▶';
+    }
+  }
+}
+
+function toggleDarkMode() {
+  document.body.classList.toggle('light-mode');
+  updateDarkModeIcon();
 }
 
 function setupEvents() {
@@ -470,29 +481,6 @@ function setupEvents() {
   getEl('runBtn').addEventListener('click', () => toggleRun());
   getEl('targetInput').addEventListener('input', updateTargetLine);
   getEl('simTime').addEventListener('input', updateTargetLine);
-  
-  // Dark mode toggle
-  const darkModeToggle = getEl('darkModeToggle');
-  if (darkModeToggle) {
-    darkModeToggle.addEventListener('click', () => {
-      document.body.classList.toggle('dark-mode');
-      localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-      updateDarkModeIcon();
-    });
-  }
-  
-  // Collapse buttons
-  document.querySelectorAll('.collapse-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const sectionId = btn.getAttribute('data-section');
-      const content = getEl(sectionId);
-      if (content) {
-        content.classList.toggle('collapsed');
-        btn.textContent = content.classList.contains('collapsed') ? '+' : '−';
-      }
-    });
-  });
   
   // Cascade rigging checkbox
   getEl('cascadeRigging').addEventListener('change', (e) => {
@@ -513,23 +501,13 @@ function setupEvents() {
 function updateDarkModeIcon() {
   const icon = getEl('darkModeToggle');
   if (icon) {
-    icon.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
+    icon.textContent = document.body.classList.contains('light-mode') ? '☀️' : '🌙';
   }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  // Restore dark mode preference
-  const darkModePref = localStorage.getItem('darkMode');
-  if (darkModePref !== null) {
-    if (darkModePref === 'true') {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-  }
-  
-  updateDarkModeIcon();
   setupEvents();
+  updateDarkModeIcon();
   addController(0.014, 0, 0.00082, 0.1, 'PID 1');
   rebuildChart();
 });

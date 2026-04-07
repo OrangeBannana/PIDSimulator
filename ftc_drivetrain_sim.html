@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FTC Drivetrain Simulator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #252a35;
+    --accent: #00d4ff;
+    --accent2: #ff6b35;
+    --accent3: #7fff6b;
+    --accent4: #ffcc00;
+    --text: #e2e8f0;
+    --text-dim: #6b7a99;
+    --text-bright: #ffffff;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --radius: 4px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid scanline texture */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ─── HEADER ─── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(10,12,16,0.95);
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo-badge {
+    background: var(--accent); color: var(--bg);
+    font-family: var(--mono); font-weight: 600; font-size: 11px;
+    padding: 3px 7px; letter-spacing: 0.08em;
+  }
+  .logo-text { font-family: var(--mono); font-size: 14px; color: var(--text-bright); letter-spacing: 0.04em; }
+  .logo-sub { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    padding: 7px 14px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); cursor: pointer; letter-spacing: 0.06em;
+    transition: all 0.15s; border-radius: var(--radius);
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary {
+    background: var(--accent); color: var(--bg); border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: #00aacc; border-color: #00aacc; color: var(--bg); }
+  .btn-run {
+    background: var(--accent3); color: var(--bg); border-color: var(--accent3);
+    font-size: 13px; padding: 9px 22px; font-weight: 600;
+  }
+  .btn-run:hover { background: #5fdd4f; }
+  .btn-run:disabled { background: var(--surface2); color: var(--text-dim); border-color: var(--border); cursor: not-allowed; }
+
+  /* ─── MAIN LAYOUT ─── */
+  .main { display: grid; grid-template-columns: 340px 1fr; flex: 1; }
+
+  /* ─── LEFT PANEL ─── */
+  .panel-left {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto; max-height: calc(100vh - 55px);
+    position: sticky; top: 55px;
+  }
+
+  .section {
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+  }
+  .section-header {
+    padding: 10px 16px; display: flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    background: var(--surface2);
+  }
+  .section-header:hover { background: #1e2330; }
+  .section-tag {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    padding: 2px 6px; letter-spacing: 0.1em;
+  }
+  .section-tag.sys { background: rgba(0,212,255,0.15); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+  .section-tag.mot { background: rgba(127,255,107,0.15); color: var(--accent3); border: 1px solid rgba(127,255,107,0.3); }
+  .section-tag.sim { background: rgba(255,107,53,0.15); color: var(--accent2); border: 1px solid rgba(255,107,53,0.3); }
+  .section-title { font-size: 12px; color: var(--text-bright); font-weight: 500; flex: 1; }
+  .section-arrow { font-size: 10px; color: var(--text-dim); transition: transform 0.2s; }
+  .section-arrow.open { transform: rotate(90deg); }
+
+  .section-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .section-body.collapsed { display: none; }
+
+  /* Field */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  label { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  label span { color: var(--text-dim); font-size: 10px; }
+
+  input[type="number"], select {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 6px 8px; width: 100%;
+    border-radius: var(--radius); outline: none;
+    transition: border-color 0.15s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus, select:focus { border-color: var(--accent); }
+  select { cursor: pointer; }
+  select option { background: var(--surface); }
+
+  .motor-info {
+    background: rgba(127,255,107,0.05); border: 1px solid rgba(127,255,107,0.2);
+    padding: 10px 12px; border-radius: var(--radius);
+  }
+  .motor-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .motor-stat { font-family: var(--mono); font-size: 11px; }
+  .motor-stat-val { color: var(--accent3); }
+  .motor-stat-label { color: var(--text-dim); }
+
+  /* Run button area */
+  .run-area {
+    padding: 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    position: sticky; bottom: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .status-bar {
+    font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    min-height: 14px; text-align: center;
+  }
+  .status-bar.ok { color: var(--accent3); }
+  .status-bar.err { color: var(--accent2); }
+
+  /* ─── RIGHT PANEL ─── */
+  .panel-right { background: var(--bg); overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+
+  .placeholder {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; color: var(--text-dim);
+    min-height: 400px;
+  }
+  .placeholder-icon { font-size: 48px; opacity: 0.3; }
+  .placeholder-text { font-family: var(--mono); font-size: 12px; text-align: center; line-height: 1.8; }
+
+  /* Results */
+  .results { display: flex; flex-direction: column; gap: 20px; }
+
+  /* Summary Table */
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  }
+  .summary-card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 12px 14px; border-radius: var(--radius);
+    position: relative; overflow: hidden;
+  }
+  .summary-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  }
+  .summary-card.c1::before { background: var(--accent); }
+  .summary-card.c2::before { background: var(--accent3); }
+  .summary-card.c3::before { background: var(--accent2); }
+  .summary-card.c4::before { background: var(--accent4); }
+  .summary-card.c5::before { background: #c084fc; }
+  .summary-card.c6::before { background: #fb7185; }
+  .summary-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.08em; }
+  .summary-value { font-family: var(--mono); font-size: 22px; color: var(--text-bright); font-weight: 600; margin-top: 4px; }
+  .summary-unit { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+
+  /* Phase bar */
+  .phase-bar-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 14px; border-radius: var(--radius);
+  }
+  .phase-bar-title { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 0.06em; }
+  .phase-bar { display: flex; height: 28px; border-radius: 2px; overflow: hidden; gap: 2px; }
+  .phase-seg {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    transition: all 0.3s; min-width: 0;
+    overflow: hidden; white-space: nowrap;
+  }
+  .phase-legend { display: flex; gap: 16px; margin-top: 8px; }
+  .phase-legend-item { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .phase-dot { width: 8px; height: 8px; border-radius: 1px; }
+
+  /* Chart grid */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chart-wide { grid-column: span 2; }
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 16px; border-radius: var(--radius);
+  }
+  .chart-title {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    letter-spacing: 0.08em; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chart-title-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .chart-inner { position: relative; height: 200px; }
+
+  /* IO modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 200; display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .modal-bg.hidden { display: none; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    width: 520px; max-width: 95vw; border-radius: var(--radius);
+  }
+  .modal-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-title { font-family: var(--mono); font-size: 13px; color: var(--text-bright); }
+  .modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 18px; }
+  .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  textarea {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+    padding: 10px; width: 100%; height: 260px; resize: vertical;
+    border-radius: var(--radius); outline: none; line-height: 1.6;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  @media (max-width: 900px) {
+    .main { grid-template-columns: 1fr; }
+    .panel-left { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--border); }
+    .charts-grid { grid-template-columns: 1fr; }
+    .chart-wide { grid-column: span 1; }
+    .summary-grid { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-badge">FTC</div>
+    <div>
+      <div class="logo-text">DRIVETRAIN SIM</div>
+      <div class="logo-sub">DC Motor Performance Simulator</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn" onclick="openExport()">⬆ Export Profile</button>
+    <button class="btn" onclick="openImport()">⬇ Import Profile</button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT PANEL -->
+  <div class="panel-left" id="leftPanel">
+
+    <!-- ROBOT SYSTEM -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection('sys')">
+        <span class="section-tag sys">SYS</span>
+        <span class="section-title">Robot & Drivetrain</span>
+        <span class="section-arrow open" id="arrow-sys">▶</span>
+      </div>
+      <div class="section-body" id="body-sys">
+        <div class="field-row">
+          <div class="field">
+            <label>Robot Mass <span>(kg)</span></label>
+            <input type="number" id="robotMass" value="15" step="0.5" min="1">
+          </div>
+          <div class="field">
+            <label>Battery Voltage <span>(V)</span></label>
+            <input type="number" id="battVoltage" value="12" step="0.1" min="1" max="14">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Wheel Diameter <span>(mm)</span></label>
+            <input type="number" id="wheelDiam" value="96" step="1" min="10">
+          </div>
+          <div class="field">
+            <label>Gear Ratio <span>(motor:wheel)</span></label>
+            <input type="number" id="gearRatio" value="2.0" step="0.1" min="0.1">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Geartrain Eff. <span>(%)</span></label>
+            <input type="number" id="gearEff" value="85" step="1" min="10" max="100">
+          </div>
+          <div class="field">
+            <label>Motor Count</label>
+            <select id="motorCount">
+              <option value="2">2 Motors</option>
+              <option value="4" selected>4 Motors</option>
+              <option value="1">1 Motor</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Wheelbase <span>(mm)</span></label>
+            <input type="number" id="wheelbase" value="330" step="5">
+          </div>
+          <div class="field">
+            <label>Track Width <span>(mm)</span></label>
+            <input type="number" id="trackWidth" value="310" step="5">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Front Weight Dist. <span>(%)</span></label>
+            <input type="number" id="weightDistFront" value="50" step="1" min="0" max="100">
+          </div>
+          <div class="field">
+            <label>Lateral CoF</label>
+            <input type="number" id="lateralCoF" value="0.8" step="0.05" min="0">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRICTION -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection('fric')">
+        <span class="section-tag sys">FRC</span>
+        <span class="section-title">Friction & Surfaces</span>
+        <span class="section-arrow open" id="arrow-fric">▶</span>
+      </div>
+      <div class="section-body" id="body-fric">
+        <div class="field-row">
+          <div class="field">
+            <label>Static CoF</label>
+            <input type="number" id="staticCoF" value="0.9" step="0.05" min="0">
+          </div>
+          <div class="field">
+            <label>Kinetic CoF</label>
+            <input type="number" id="kineticCoF" value="0.7" step="0.05" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Rolling Resistance Coeff.</label>
+          <input type="number" id="rollingR" value="0.015" step="0.001" min="0">
+        </div>
+      </div>
+    </div>
+
+    <!-- MOTOR -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection('mot')">
+        <span class="section-tag mot">MOT</span>
+        <span class="section-title">Motor Model</span>
+        <span class="section-arrow open" id="arrow-mot">▶</span>
+      </div>
+      <div class="section-body" id="body-mot">
+        <div class="field">
+          <label>Motor Preset</label>
+          <select id="motorPreset" onchange="loadMotorPreset()">
+            <option value="gobilda223">GoBILDA 5203 (223 RPM)</option>
+            <option value="gobilda312">GoBILDA 5203 (312 RPM)</option>
+            <option value="gobilda435">GoBILDA 5203 (435 RPM)</option>
+            <option value="neverest20">NeveRest 20</option>
+            <option value="neverest40">NeveRest 40</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="motor-info" id="motorInfoBox">
+          <div class="motor-info-grid" id="motorInfoGrid"></div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Free Speed <span>(RPM)</span></label>
+            <input type="number" id="freeSpeedRPM" value="312" step="10">
+          </div>
+          <div class="field">
+            <label>Stall Torque <span>(Nm)</span></label>
+            <input type="number" id="stallTorque" value="3.2" step="0.05" min="0">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Stall Current <span>(A)</span></label>
+            <input type="number" id="stallCurrent" value="9.2" step="0.1" min="0">
+          </div>
+          <div class="field">
+            <label>Free Current <span>(A)</span></label>
+            <input type="number" id="freeCurrent" value="0.35" step="0.05" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Nominal Voltage <span>(V)</span></label>
+          <input type="number" id="nomVoltage" value="12" step="0.5">
+        </div>
+      </div>
+    </div>
+
+    <!-- SIMULATION -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection('sim')">
+        <span class="section-tag sim">SIM</span>
+        <span class="section-title">Simulation Parameters</span>
+        <span class="section-arrow open" id="arrow-sim">▶</span>
+      </div>
+      <div class="section-body" id="body-sim">
+        <div class="field">
+          <label>Target Distance <span>(cm)</span></label>
+          <input type="number" id="targetDist" value="100" step="5" min="1">
+        </div>
+        <div class="field">
+          <label>Target Time <span>(s, 0 = no constraint)</span></label>
+          <input type="number" id="targetTime" value="0" step="0.1" min="0">
+        </div>
+        <div class="field">
+          <label>Deceleration Method</label>
+          <select id="decelMethod">
+            <option value="coast">Coast (motor off)</option>
+            <option value="brake" selected>Motor Brake (short circuit)</option>
+            <option value="regen">Regenerative Braking</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Timestep <span>(ms)</span></label>
+          <select id="timestepMs">
+            <option value="1">1 ms (high accuracy)</option>
+            <option value="5" selected>5 ms (fast)</option>
+            <option value="10">10 ms (draft)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- RUN -->
+    <div class="run-area">
+      <div class="status-bar" id="statusBar">Configure parameters and press RUN</div>
+      <button class="btn btn-run" id="runBtn" onclick="runSimulation()">▶ RUN SIMULATION</button>
+    </div>
+
+  </div><!-- end panel-left -->
+
+  <!-- RIGHT PANEL -->
+  <div class="panel-right" id="panelRight">
+    <div class="placeholder" id="placeholder">
+      <div class="placeholder-icon">⚡</div>
+      <div class="placeholder-text">
+        Configure your drivetrain parameters<br>
+        and press RUN to simulate<br><br>
+        <span style="color:var(--accent);font-size:10px;">VELOCITY · ACCELERATION · CURRENT · DISTANCE</span>
+      </div>
+    </div>
+    <div class="results" id="resultsArea" style="display:none"></div>
+  </div>
+
+</div><!-- end main -->
+</div><!-- end app -->
+
+<!-- EXPORT MODAL -->
+<div class="modal-bg hidden" id="exportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">EXPORT PROFILE</span>
+      <button class="modal-close" onclick="closeModal('exportModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:11px;color:var(--text-dim);font-family:var(--mono);">Copy or download the JSON profile below to save or share this simulation configuration.</p>
+      <textarea id="exportText" readonly></textarea>
+      <div class="modal-actions">
+        <button class="btn" onclick="downloadProfile()">⬇ Download .json</button>
+        <button class="btn btn-primary" onclick="copyProfile()">Copy to Clipboard</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal-bg hidden" id="importModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">IMPORT PROFILE</span>
+      <button class="modal-close" onclick="closeModal('importModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:11px;color:var(--text-dim);font-family:var(--mono);">Paste a previously exported JSON profile to load its parameters.</p>
+      <textarea id="importText" placeholder='{"robotMass": 15, "battVoltage": 12, ...}'></textarea>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('importModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="importProfile()">Load Profile</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  MOTOR DATABASE
+// ══════════════════════════════════════════════════════════════
+const MOTOR_DB = {
+  gobilda223:  { name:'GoBILDA 5203-2402-0019 (223 RPM)', freeSpeedRPM:223,  stallTorque:13.2, stallCurrent:9.2,  freeCurrent:0.35, nomVoltage:12 },
+  gobilda312:  { name:'GoBILDA 5203-2402-0014 (312 RPM)', freeSpeedRPM:312,  stallTorque:9.2,  stallCurrent:9.2,  freeCurrent:0.35, nomVoltage:12 },
+  gobilda435:  { name:'GoBILDA 5203-2402-0010 (435 RPM)', freeSpeedRPM:435,  stallTorque:6.2,  stallCurrent:9.2,  freeCurrent:0.35, nomVoltage:12 },
+  neverest20:  { name:'NeveRest 20',                      freeSpeedRPM:340,  stallTorque:2.94, stallCurrent:11.5, freeCurrent:0.4,  nomVoltage:12 },
+  neverest40:  { name:'NeveRest 40',                      freeSpeedRPM:160,  stallTorque:5.88, stallCurrent:11.5, freeCurrent:0.4,  nomVoltage:12 },
+  custom:      { name:'Custom',                           freeSpeedRPM:300,  stallTorque:5.0,  stallCurrent:10.0, freeCurrent:0.4,  nomVoltage:12 },
+};
+
+function loadMotorPreset() {
+  const key = document.getElementById('motorPreset').value;
+  const m = MOTOR_DB[key];
+  if (!m) return;
+  document.getElementById('freeSpeedRPM').value = m.freeSpeedRPM;
+  document.getElementById('stallTorque').value  = m.stallTorque;
+  document.getElementById('stallCurrent').value = m.stallCurrent;
+  document.getElementById('freeCurrent').value  = m.freeCurrent;
+  document.getElementById('nomVoltage').value   = m.nomVoltage;
+  updateMotorInfo();
+}
+
+function updateMotorInfo() {
+  const freeRPM = parseFloat(document.getElementById('freeSpeedRPM').value);
+  const stallT  = parseFloat(document.getElementById('stallTorque').value);
+  const stallI  = parseFloat(document.getElementById('stallCurrent').value);
+  const freeI   = parseFloat(document.getElementById('freeCurrent').value);
+  const nomV    = parseFloat(document.getElementById('nomVoltage').value);
+
+  const freeRadS = freeRPM * 2 * Math.PI / 60;
+  const Kt = stallT / stallI;
+  const R  = nomV / stallI;
+  const Ke = nomV / freeRadS;
+
+  document.getElementById('motorInfoGrid').innerHTML = `
+    <div class="motor-stat"><div class="motor-stat-label">Kt</div><div class="motor-stat-val">${Kt.toFixed(4)} Nm/A</div></div>
+    <div class="motor-stat"><div class="motor-stat-label">Ke</div><div class="motor-stat-val">${Ke.toFixed(4)} V·s/rad</div></div>
+    <div class="motor-stat"><div class="motor-stat-label">R</div><div class="motor-stat-val">${R.toFixed(3)} Ω</div></div>
+    <div class="motor-stat"><div class="motor-stat-label">Free Speed</div><div class="motor-stat-val">${freeRadS.toFixed(1)} rad/s</div></div>
+    <div class="motor-stat"><div class="motor-stat-label">Power</div><div class="motor-stat-val">${(stallT * freeRadS / 4).toFixed(1)} W peak</div></div>
+    <div class="motor-stat"><div class="motor-stat-label">Free Current</div><div class="motor-stat-val">${freeI} A</div></div>
+  `;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  PHYSICS MODULE — modular, swap out for more detail later
+// ══════════════════════════════════════════════════════════════
+
+function buildSystem(params) {
+  const g = 9.81;
+  const wheelR = (params.wheelDiam / 1000) / 2;
+  const wheelCircum = 2 * Math.PI * wheelR;
+  const freeRadS = params.freeSpeedRPM * 2 * Math.PI / 60;
+  const Kt  = params.stallTorque / params.stallCurrent;
+  const R   = params.nomVoltage / params.stallCurrent;
+  const Ke  = params.nomVoltage / freeRadS;
+  const eta = params.gearEff / 100;
+  const n   = params.motorCount;
+  const gr  = params.gearRatio; // motor:wheel
+
+  // Normal force & friction
+  const Fn = params.robotMass * g;
+  const Ff_roll = params.rollingR * Fn;
+
+  // Max traction force (static friction limit)
+  const F_traction_max = params.staticCoF * Fn;
+  const F_kinetic_drag = params.kineticCoF * Fn; // when sliding (unused in forward drive)
+
+  return { g, wheelR, wheelCircum, freeRadS, Kt, R, Ke, eta, n, gr, Fn, Ff_roll, F_traction_max, params };
+}
+
+// Motor model: torque and current as functions of (voltage, omega_motor)
+// Returns { torque_Nm, current_A } at the motor shaft
+function motorModel(voltage, omegaMotor, sys) {
+  const { Kt, R, Ke } = sys;
+  const current = (voltage - Ke * omegaMotor) / R;
+  const torque  = Kt * current;
+  return { torque, current: Math.max(current, 0) }; // clamp negative current (regen not modeled in current)
+}
+
+// Force model: net force on robot given velocity (m/s) and whether accelerating or decelerating
+function driveForce(velocity, voltageApplied, sys) {
+  const { wheelR, gr, eta, n, Fn, Ff_roll, F_traction_max, params } = sys;
+  const omegaWheel  = velocity / wheelR;
+  const omegaMotor  = omegaWheel * gr;
+
+  const { torque, current } = motorModel(voltageApplied, omegaMotor, sys);
+
+  // Force at wheel from all motors through gearbox
+  let F_drive = (torque * n * gr * eta) / wheelR;
+
+  // Clamp to traction limit
+  F_drive = Math.min(F_drive, F_traction_max);
+  F_drive = Math.max(F_drive, -F_traction_max);
+
+  // Rolling resistance opposes motion
+  const F_resist = Ff_roll * Math.sign(velocity || 1);
+
+  const F_net = F_drive - F_resist;
+  const totalCurrent = current * n;
+  return { F_net, F_drive, F_resist, totalCurrent, omegaMotor, torque };
+}
+
+// Braking force model
+function brakeForce(velocity, method, sys) {
+  const { wheelR, gr, eta, n, Fn, Ff_roll, R, Kt, Ke, params } = sys;
+  const omegaWheel = velocity / wheelR;
+  const omegaMotor = omegaWheel * gr;
+
+  let F_brake = 0, totalCurrent = 0;
+
+  if (method === 'coast') {
+    F_brake = 0;
+    totalCurrent = 0;
+  } else if (method === 'brake') {
+    // Short-circuit: back-EMF drives current through R, produces retarding torque
+    const current = (Ke * omegaMotor) / R;
+    const torque  = Kt * current;
+    F_brake = (torque * n * gr * eta) / wheelR;
+    totalCurrent = current * n;
+  } else if (method === 'regen') {
+    // Regenerative: similar to brake but we model full regen
+    const current = (Ke * omegaMotor) / R;
+    const torque  = Kt * current * 1.2; // slightly more effective
+    F_brake = (torque * n * gr * eta) / wheelR;
+    totalCurrent = -current * n; // negative = charging
+  }
+
+  const F_roll = Ff_roll;
+  const F_net = -(F_brake + F_roll); // retarding, so negative
+  return { F_net, totalCurrent };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SIMULATION RUNNER
+// ══════════════════════════════════════════════════════════════
+
+function runSimCore(params) {
+  const sys = buildSystem(params);
+  const dt = params.timestepMs / 1000;
+  const targetM = params.targetDist / 100;
+  const Vbatt = params.battVoltage;
+
+  // State
+  let vel = 0, pos = 0, t = 0;
+  let phase = 'accel'; // accel → cruise → decel → done
+
+  // Output arrays
+  const T=[], V=[], A=[], C=[], P=[], PH=[];
+
+  // Cruise threshold: consider free speed at wheel
+  const vMax_theoretical = (sys.freeRadS / sys.gr) * sys.wheelR;
+
+  // Simple phase logic:
+  // accel: full voltage until near-vMax or target decel point
+  // cruise: when vel ≈ vMax
+  // decel: when position + stopping distance >= target
+
+  let phaseAccelDist = 0, phaseCruiseDist = 0, phaseDecelDist = 0;
+  let phaseAccelStart = 0, phaseCruiseStart = 0, phaseDecelStart = 0;
+  let timeToGoal = null;
+
+  const maxIter = Math.ceil(30 / dt); // safety cap at 30s
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    // Estimate stopping distance from current velocity
+    const stopDist = estimateStoppingDistance(vel, sys, params.decelMethod, dt);
+
+    // Phase transition logic
+    if (phase === 'accel') {
+      const vRatio = vel / vMax_theoretical;
+      if (vRatio > 0.95) {
+        phase = 'cruise';
+        phaseCruiseStart = pos;
+      }
+    }
+    if ((phase === 'accel' || phase === 'cruise') && (pos + stopDist) >= targetM) {
+      if (phase === 'cruise') phaseCruiseDist = pos - phaseCruiseStart;
+      phase = 'decel';
+      phaseDecelStart = pos;
+    }
+
+    // Voltage applied this step
+    let voltageApplied = 0;
+    if (phase === 'accel' || phase === 'cruise') {
+      voltageApplied = Vbatt;
+    }
+    // decel: 0 (coast) or negative (for brake/regen — approximated by brakeForce)
+
+    // Forces
+    let F_net, totalCurrent;
+    if (phase === 'accel' || phase === 'cruise') {
+      const r = driveForce(vel, voltageApplied, sys);
+      F_net = r.F_net;
+      totalCurrent = r.totalCurrent;
+    } else {
+      const r = brakeForce(vel, params.decelMethod, sys);
+      F_net = r.F_net;
+      totalCurrent = r.totalCurrent;
+    }
+
+    const acc = F_net / params.robotMass;
+
+    // Record
+    T.push(t);
+    V.push(vel * 100);         // cm/s → m/s * 100 = cm/s
+    A.push(acc);
+    C.push(Math.abs(totalCurrent));
+    P.push(pos * 100);
+    PH.push(phase);
+
+    // Integrate
+    vel = vel + acc * dt;
+    if (vel < 0) vel = 0; // don't go backwards in decel
+    pos = pos + vel * dt;
+    t += dt;
+
+    if (phase === 'decel' && vel < 0.005) {
+      if (timeToGoal === null) timeToGoal = t;
+      phase = 'done';
+      // record final point
+      T.push(t); V.push(0); A.push(0); C.push(0); P.push(pos * 100); PH.push('done');
+      break;
+    }
+  }
+
+  if (timeToGoal === null) timeToGoal = t;
+
+  const maxVel   = Math.max(...V) / 100; // m/s
+  const maxAccel = Math.max(...A);
+  const maxCurr  = Math.max(...C);
+  phaseAccelDist = (phaseCruiseStart > 0 ? phaseCruiseStart : phaseDecelStart) * 100;
+  if (phase === 'done' || phase === 'decel') phaseDecelDist = (pos - phaseDecelStart) * 100;
+
+  return {
+    t: T, vel: V, acc: A, curr: C, pos: P, phase: PH,
+    summary: {
+      maxSpeedMs:   maxVel,
+      maxSpeedCms:  maxVel * 100,
+      maxAccel,
+      maxCurrent:   maxCurr,
+      accelDist:    phaseAccelDist,
+      cruiseDist:   phaseCruiseDist * 100,
+      decelDist:    phaseDecelDist,
+      totalDist:    pos * 100,
+      timeToGoal,
+      vMax_theoretical: vMax_theoretical * 100,
+    }
+  };
+}
+
+function estimateStoppingDistance(vel, sys, method, dt) {
+  // Quick numeric estimate
+  let v = vel, d = 0;
+  const maxIter = 5000;
+  for (let i = 0; i < maxIter; i++) {
+    if (v < 0.001) break;
+    const { F_net } = brakeForce(v, method, sys);
+    const acc = F_net / sys.params.robotMass;
+    v = v + acc * dt;
+    if (v < 0) v = 0;
+    d += v * dt;
+  }
+  return d;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  UI WIRING
+// ══════════════════════════════════════════════════════════════
+
+let charts = {};
+
+function getParams() {
+  return {
+    robotMass:       parseFloat(document.getElementById('robotMass').value),
+    battVoltage:     parseFloat(document.getElementById('battVoltage').value),
+    wheelDiam:       parseFloat(document.getElementById('wheelDiam').value),
+    gearRatio:       parseFloat(document.getElementById('gearRatio').value),
+    gearEff:         parseFloat(document.getElementById('gearEff').value),
+    motorCount:      parseInt(document.getElementById('motorCount').value),
+    wheelbase:       parseFloat(document.getElementById('wheelbase').value),
+    trackWidth:      parseFloat(document.getElementById('trackWidth').value),
+    weightDistFront: parseFloat(document.getElementById('weightDistFront').value),
+    lateralCoF:      parseFloat(document.getElementById('lateralCoF').value),
+    staticCoF:       parseFloat(document.getElementById('staticCoF').value),
+    kineticCoF:      parseFloat(document.getElementById('kineticCoF').value),
+    rollingR:        parseFloat(document.getElementById('rollingR').value),
+    freeSpeedRPM:    parseFloat(document.getElementById('freeSpeedRPM').value),
+    stallTorque:     parseFloat(document.getElementById('stallTorque').value),
+    stallCurrent:    parseFloat(document.getElementById('stallCurrent').value),
+    freeCurrent:     parseFloat(document.getElementById('freeCurrent').value),
+    nomVoltage:      parseFloat(document.getElementById('nomVoltage').value),
+    targetDist:      parseFloat(document.getElementById('targetDist').value),
+    targetTime:      parseFloat(document.getElementById('targetTime').value),
+    decelMethod:     document.getElementById('decelMethod').value,
+    timestepMs:      parseFloat(document.getElementById('timestepMs').value),
+  };
+}
+
+function setParams(p) {
+  for (const [k, v] of Object.entries(p)) {
+    const el = document.getElementById(k);
+    if (el) el.value = v;
+  }
+}
+
+function runSimulation() {
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('statusBar');
+  btn.disabled = true;
+  status.textContent = 'Running simulation…';
+  status.className = 'status-bar';
+
+  setTimeout(() => {
+    try {
+      const params = getParams();
+      const res = runSimCore(params);
+      renderResults(res, params);
+      status.textContent = `✓ Done — ${res.t.length} steps, ${res.summary.timeToGoal.toFixed(3)}s to goal`;
+      status.className = 'status-bar ok';
+    } catch(e) {
+      console.error(e);
+      document.getElementById('statusBar').textContent = '✗ Error: ' + e.message;
+      document.getElementById('statusBar').className = 'status-bar err';
+    }
+    btn.disabled = false;
+  }, 10);
+}
+
+function renderResults(res, params) {
+  document.getElementById('placeholder').style.display = 'none';
+  const area = document.getElementById('resultsArea');
+  area.style.display = 'flex';
+  area.innerHTML = '';
+
+  const s = res.summary;
+  const tgt = params.targetTime > 0 ? params.targetTime : null;
+  const beatTime = tgt ? (s.timeToGoal <= tgt ? '✓' : '✗') : '';
+
+  // ── Summary cards
+  const summaryDiv = document.createElement('div');
+  summaryDiv.className = 'summary-grid';
+  summaryDiv.innerHTML = `
+    <div class="summary-card c1">
+      <div class="summary-label">MAX SPEED</div>
+      <div class="summary-value">${s.maxSpeedCms.toFixed(1)}<span class="summary-unit"> cm/s</span></div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:4px">Theoretical: ${s.vMax_theoretical.toFixed(1)} cm/s</div>
+    </div>
+    <div class="summary-card c2">
+      <div class="summary-label">TIME TO GOAL</div>
+      <div class="summary-value">${s.timeToGoal.toFixed(3)}<span class="summary-unit"> s</span></div>
+      ${tgt ? `<div style="font-family:var(--mono);font-size:10px;margin-top:4px;color:${s.timeToGoal<=tgt?'var(--accent3)':'var(--accent2)'}">${beatTime} Target: ${tgt}s</div>` : ''}
+    </div>
+    <div class="summary-card c3">
+      <div class="summary-label">MAX ACCELERATION</div>
+      <div class="summary-value">${s.maxAccel.toFixed(2)}<span class="summary-unit"> m/s²</span></div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:4px">${(s.maxAccel/9.81).toFixed(2)} g</div>
+    </div>
+    <div class="summary-card c4">
+      <div class="summary-label">MAX CURRENT DRAW</div>
+      <div class="summary-value">${s.maxCurrent.toFixed(1)}<span class="summary-unit"> A</span></div>
+    </div>
+    <div class="summary-card c5">
+      <div class="summary-label">TOTAL DISTANCE</div>
+      <div class="summary-value">${s.totalDist.toFixed(1)}<span class="summary-unit"> cm</span></div>
+    </div>
+    <div class="summary-card c6">
+      <div class="summary-label">DECEL METHOD</div>
+      <div class="summary-value" style="font-size:16px">${params.decelMethod.toUpperCase()}</div>
+    </div>
+  `;
+  area.appendChild(summaryDiv);
+
+  // ── Phase bar
+  const totalDist = s.accelDist + s.cruiseDist + s.decelDist || 1;
+  const pAccel  = (s.accelDist  / totalDist * 100).toFixed(1);
+  const pCruise = (s.cruiseDist / totalDist * 100).toFixed(1);
+  const pDecel  = (s.decelDist  / totalDist * 100).toFixed(1);
+
+  const phaseBarDiv = document.createElement('div');
+  phaseBarDiv.className = 'phase-bar-wrap';
+  phaseBarDiv.innerHTML = `
+    <div class="phase-bar-title">PHASE BREAKDOWN — DISTANCE</div>
+    <div class="phase-bar">
+      <div class="phase-seg" style="width:${pAccel}%;background:var(--accent);color:var(--bg)">${pAccel > 8 ? `ACCEL ${s.accelDist.toFixed(1)}cm` : ''}</div>
+      <div class="phase-seg" style="width:${pCruise}%;background:var(--accent3);color:var(--bg)">${pCruise > 8 ? `CRUISE ${s.cruiseDist.toFixed(1)}cm` : ''}</div>
+      <div class="phase-seg" style="width:${pDecel}%;background:var(--accent2);color:var(--bg)">${pDecel > 8 ? `DECEL ${s.decelDist.toFixed(1)}cm` : ''}</div>
+    </div>
+    <div class="phase-legend">
+      <div class="phase-legend-item"><div class="phase-dot" style="background:var(--accent)"></div>Accel: ${s.accelDist.toFixed(2)} cm</div>
+      <div class="phase-legend-item"><div class="phase-dot" style="background:var(--accent3)"></div>Cruise: ${s.cruiseDist.toFixed(2)} cm</div>
+      <div class="phase-legend-item"><div class="phase-dot" style="background:var(--accent2)"></div>Decel: ${s.decelDist.toFixed(2)} cm</div>
+    </div>
+  `;
+  area.appendChild(phaseBarDiv);
+
+  // ── Charts grid
+  const chartsDiv = document.createElement('div');
+  chartsDiv.className = 'charts-grid';
+
+  // Downsample for performance
+  const maxPts = 800;
+  const step = Math.max(1, Math.floor(res.t.length / maxPts));
+  const tDS   = res.t.filter((_,i) => i%step===0);
+  const vDS   = res.vel.filter((_,i) => i%step===0);
+  const aDS   = res.acc.filter((_,i) => i%step===0);
+  const cDS   = res.curr.filter((_,i) => i%step===0);
+  const pDS   = res.pos.filter((_,i) => i%step===0);
+
+  const phaseColors = res.phase.filter((_,i)=>i%step===0).map(ph => {
+    if (ph==='accel')  return 'rgba(0,212,255,0.8)';
+    if (ph==='cruise') return 'rgba(127,255,107,0.8)';
+    if (ph==='decel')  return 'rgba(255,107,53,0.8)';
+    return 'rgba(100,100,100,0.5)';
+  });
+
+  chartsDiv.innerHTML = `
+    <div class="chart-card chart-wide" id="wrap-vel">
+      <div class="chart-title"><div class="chart-title-dot" style="background:var(--accent)"></div>VELOCITY vs TIME<span style="color:var(--text-dim);font-size:10px;margin-left:auto">cm/s</span></div>
+      <div class="chart-inner"><canvas id="chartVel"></canvas></div>
+    </div>
+    <div class="chart-card" id="wrap-acc">
+      <div class="chart-title"><div class="chart-title-dot" style="background:var(--accent3)"></div>ACCELERATION vs TIME<span style="color:var(--text-dim);font-size:10px;margin-left:auto">m/s²</span></div>
+      <div class="chart-inner"><canvas id="chartAcc"></canvas></div>
+    </div>
+    <div class="chart-card" id="wrap-curr">
+      <div class="chart-title"><div class="chart-title-dot" style="background:var(--accent2)"></div>CURRENT DRAW vs TIME<span style="color:var(--text-dim);font-size:10px;margin-left:auto">A (total)</span></div>
+      <div class="chart-inner"><canvas id="chartCurr"></canvas></div>
+    </div>
+    <div class="chart-card chart-wide" id="wrap-pos">
+      <div class="chart-title"><div class="chart-title-dot" style="background:var(--accent4)"></div>POSITION vs TIME<span style="color:var(--text-dim);font-size:10px;margin-left:auto">cm</span></div>
+      <div class="chart-inner"><canvas id="chartPos"></canvas></div>
+    </div>
+  `;
+  area.appendChild(chartsDiv);
+
+  // Destroy old charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: { legend: { display: false }, tooltip: {
+      backgroundColor: '#181c24',
+      borderColor: '#252a35', borderWidth: 1,
+      titleColor: '#e2e8f0', bodyColor: '#6b7a99',
+      titleFont: { family: "'IBM Plex Mono'" },
+      bodyFont:  { family: "'IBM Plex Mono'", size: 11 },
+    }},
+    scales: {
+      x: { ticks: { color: '#6b7a99', font: { family:"'IBM Plex Mono'", size:10 }, maxTicksLimit: 10 }, grid: { color: '#1a1e28' }, border: { color: '#252a35' } },
+      y: { ticks: { color: '#6b7a99', font: { family:"'IBM Plex Mono'", size:10 } }, grid: { color: '#1a1e28' }, border: { color: '#252a35' } }
+    }
+  };
+
+  const makeData = (yData, color, fill=false) => ({
+    labels: tDS.map(t => t.toFixed(3)),
+    datasets: [{
+      data: yData,
+      borderColor: color, borderWidth: 2,
+      backgroundColor: fill ? color.replace(')',',0.08)').replace('rgb','rgba') : 'transparent',
+      pointRadius: 0, tension: 0.3, fill
+    }]
+  });
+
+  charts.vel  = new Chart(document.getElementById('chartVel'),  { type:'line', data: makeData(vDS,   '#00d4ff', true), options: chartDefaults });
+  charts.acc  = new Chart(document.getElementById('chartAcc'),  { type:'line', data: makeData(aDS,   '#7fff6b', true), options: chartDefaults });
+  charts.curr = new Chart(document.getElementById('chartCurr'), { type:'line', data: makeData(cDS,   '#ff6b35', true), options: chartDefaults });
+  charts.pos  = new Chart(document.getElementById('chartPos'),  { type:'line', data: {
+    labels: tDS.map(t => t.toFixed(3)),
+    datasets: [{
+      data: pDS, borderWidth: 2, borderColor: '#ffcc00',
+      backgroundColor: 'rgba(255,204,0,0.06)', pointRadius: 0, tension: 0.3, fill: true
+    }, {
+      data: Array(tDS.length).fill(params.targetDist),
+      borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderDash: [6,4],
+      pointRadius: 0, backgroundColor: 'transparent', fill: false
+    }]
+  }, options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, tooltip: { ...chartDefaults.plugins.tooltip } } } });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SECTION TOGGLE
+// ══════════════════════════════════════════════════════════════
+
+function toggleSection(id) {
+  const body  = document.getElementById('body-' + id);
+  const arrow = document.getElementById('arrow-' + id);
+  const isOpen = !body.classList.contains('collapsed');
+  if (isOpen) { body.classList.add('collapsed'); arrow.classList.remove('open'); }
+  else         { body.classList.remove('collapsed'); arrow.classList.add('open'); }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  IMPORT / EXPORT
+// ══════════════════════════════════════════════════════════════
+
+const PROFILE_FIELDS = [
+  'robotMass','battVoltage','wheelDiam','gearRatio','gearEff','motorCount',
+  'wheelbase','trackWidth','weightDistFront','lateralCoF','staticCoF','kineticCoF','rollingR',
+  'freeSpeedRPM','stallTorque','stallCurrent','freeCurrent','nomVoltage',
+  'targetDist','targetTime','decelMethod','timestepMs'
+];
+
+function openExport() {
+  const p = {};
+  for (const f of PROFILE_FIELDS) {
+    const el = document.getElementById(f);
+    if (el) p[f] = el.value;
+  }
+  p['_version'] = '1.0';
+  p['_created'] = new Date().toISOString();
+  document.getElementById('exportText').value = JSON.stringify(p, null, 2);
+  document.getElementById('exportModal').classList.remove('hidden');
+}
+
+function importProfile() {
+  try {
+    const raw = document.getElementById('importText').value.trim();
+    const p = JSON.parse(raw);
+    for (const f of PROFILE_FIELDS) {
+      if (p[f] !== undefined) {
+        const el = document.getElementById(f);
+        if (el) el.value = p[f];
+      }
+    }
+    updateMotorInfo();
+    closeModal('importModal');
+    document.getElementById('statusBar').textContent = '✓ Profile loaded. Press RUN to simulate.';
+    document.getElementById('statusBar').className = 'status-bar ok';
+  } catch(e) {
+    alert('Invalid profile JSON: ' + e.message);
+  }
+}
+
+function copyProfile() {
+  navigator.clipboard.writeText(document.getElementById('exportText').value).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy to Clipboard', 1500);
+  });
+}
+
+function downloadProfile() {
+  const text = document.getElementById('exportText').value;
+  const blob = new Blob([text], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'ftc_sim_profile.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openImport() { document.getElementById('importModal').classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+// Close on backdrop click
+document.querySelectorAll('.modal-bg').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.add('hidden'); });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════
+loadMotorPreset();
+['freeSpeedRPM','stallTorque','stallCurrent','freeCurrent','nomVoltage'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    document.getElementById('motorPreset').value = 'custom';
+    updateMotorInfo();
+  });
+});
+</script>
+</body>
+</html>
