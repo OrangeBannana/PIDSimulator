@@ -1,167 +1,52 @@
-clear, clc, clf;
+clear; clc; clf;
 
-p = 0.014;
-i = 0.03;
-d = 0.0006;
-f = 0.07;
+% Setup Physical System
+myMotor = Motor();
+myMech  = Mechanism();
+target  = 100; % cm
 
-% System Constants
+% Setup Controllers to Compare
+ctrls = {
+    PIDController(0.014, 0, 0.00082, 0.10, 'Tuned PID'), ...
+    OptimalController(.7, 4.0, 'Optimal Regen'), ...
+    PIDController(0.003, 0, 0.0002, 0.10, 'Re-Tuned PID'), ...
+    PIDController(0.0115, 0, 0.000685, 0.10, 'Re-Tuned PID2'), ...
+    QuadraticPIDController(0.017, 0, 0.05, 0.10, 'Quadratic PID')
+};
 
-mass = 1.2; % Kg
-
-reductionRatio = 12/60; % Input Teeth : Output Teeth
-
-spoolRadius = 20/1000; % Spool Radius in Meters
-
-controlPeriod = 26 / 1000; % Time between updates in seconds
-
-gravityConstant = -9.81; % m/s^2
-
-systemInertiaAtShaft = mass * spoolRadius^2;
-
-motorCount = 2;
-
-kineticFrictionForce = 0.5 * gravityConstant * mass;
-staticFrictionForce = 1.5 * gravityConstant * mass;
-
-
-% Motor Constants
-
-maxVoltage = 12; % Volts
-
-freeSpeed = (5900 * 2 * pi)/60; % No load speed rad/s
-freeCurrent = 0.3; % A
-
-stallTorque = 0.19; % N * m
-stallCurrent = 11; % A
-
-backEMFconstant = maxVoltage / freeSpeed; % V / Rad/s or N * m /A
-
-armatureResistance = maxVoltage / stallCurrent; % Ohms
-
-% Working Variables
-
-angularPosition = 0.0;
-angularVelocity = 0.0;
-angularAcceleration = 0.0;
-
-previousError = 0.0;
-
-controller = Controller(p, i, d);
-
-integralSum = 0.0;
-
-% Situation Variables
-targetPosition = 100; % cm
-angularTargetPosition = 28 * ((targetPosition / (2 * pi * spoolRadius * 100)) / reductionRatio); % ticks
-
-overallTime = tic;
-timer = tic;
-
-data = animatedline;
+% Run Comparison
 hold on;
+for i = 1:length(ctrls)
+    res = runSim(myMotor, myMech, ctrls{i}, target);
+    plot(res.t, res.p, 'DisplayName', ctrls{i}.Name, 'LineWidth', 2);
+end
 
+yline(target, 'k:'); grid on; legend();
+ylabel('Position (cm)'); xlabel('Time (s)');
+xlim([.6 1]);
+ylim([target - 10 target + 10]);
 
-while (true)
-    timeStep = toc(timer);
-    time = toc(overallTime);
-
-    if timeStep >= controlPeriod
-
-        %% Update system to real time
-        
-        % Calculate Angular Position & update angular velocity
-        angularPosition = angularPosition + timeStep * angularVelocity + (1/2) * angularAcceleration * timeStep^2;
-        
-        angularVelocity = angularVelocity + angularAcceleration * timeStep;
-
-        % Find linear position in cm
-        position = ((angularPosition / (2 * pi)) * reductionRatio) * 2 * pi * spoolRadius * 100;
-        
-        %% Update Controller
-        
-        angularPositionTicks = (angularPosition / (2 * pi)) * 28;
-        controller = controller.update(angularPositionTicks, angularTargetPosition); % Controller output is clamped [-1,1]
-        
-        errorDeriv = (controller.positionError - previousError) / timeStep;
-        previousError = controller.positionError;
-
-        %integralSum = integralSum + controller.positionError * timeStep;
-        integralSum = integralSum + controller.positionError * timeStep;
-
-        if (abs(integralSum) > 1)
-            integralSum = 1 * sign(integralSum);
-        end
-
-        controlSum = controller.output + f + errorDeriv * d + i * integralSum;
-
-        appliedPower = clip(controlSum, -1, 1);
-
-        %integralSum = integralSum - (i * (controlSum - appliedPower) * timeStep);
-
-        appliedVoltage = appliedPower * maxVoltage ;
-
-
-        %% Calculate Motor Torque
-
-        backEMFVoltage = backEMFconstant * angularVelocity;
-        netDrivingVoltage = appliedVoltage - backEMFVoltage;
-
-        armatureCurrent = netDrivingVoltage / armatureResistance;
-
-        motorTorque = backEMFconstant * armatureCurrent;
-
-        %% Calculate Net Torque
-
-        motorTorqueAtShaft = (motorTorque * motorCount) / reductionRatio;
-
-        gravityTorqueAtShaft = gravityConstant * mass * spoolRadius;
-        
-        if (abs(angularVelocity) < 0.1) 
-            frictionTorqueAtShaft = sign(motorTorqueAtShaft + gravityTorqueAtShaft) * staticFrictionForce * spoolRadius;
-            if (abs(frictionTorqueAtShaft) >= abs(motorTorqueAtShaft + gravityTorqueAtShaft))
-                netTorqueAtShaft = 0;
-                angularVelocity = 0;
-            else
-                frictionTorqueAtShaft = sign(angularVelocity) * kineticFrictionForce * spoolRadius;
-                netTorqueAtShaft = motorTorqueAtShaft + gravityTorqueAtShaft + frictionTorqueAtShaft;
-            end
-
-        else
-            frictionTorqueAtShaft = sign(angularVelocity) * kineticFrictionForce * spoolRadius;
-            netTorqueAtShaft = motorTorqueAtShaft + gravityTorqueAtShaft + frictionTorqueAtShaft;
-        end
-        
-        %% Calculate angular position, velocity, and acceleration
-
-        angularAcceleration = netTorqueAtShaft / systemInertiaAtShaft;
-
-        timer = tic;
-        addpoints(data, time, position)
-        xlim([time - 5, time])
-        ylim([0 inf])
-        drawnow limitrate;
-
-        fprintf("\n\nNEXT TIME STEP\n")
-        fprintf("Time Step: %.2f\n", timeStep)
-        fprintf("Position: %.2f\n", position)
-        fprintf("Angular Position: %.2f\n", angularPosition)
-        fprintf("Angular Velocity: %.2f\n", angularVelocity)
-        fprintf("Angular Acceleration: %.2f\n", angularAcceleration)
-        fprintf("Controller pGain: %.2f\n", controller.pGain)
-        fprintf("Controller p: %.2f\n", controller.p)
-        fprintf("Controller Output: %.2f\n", controller.output)
-        fprintf("Controller Position Error: %.2f\n", controller.positionError)
-        fprintf("Overall Time: %.2f\n", time)
-        fprintf("Net Torque: %.2f\n", netTorqueAtShaft)
-        fprintf("Applied Voltage: %.2f\n", appliedVoltage)
-        fprintf("Motor Torque: %.2f\n", motorTorque)
-        fprintf("Motor Torque At Shaft: %.2f\n", motorTorqueAtShaft)
-        fprintf("Gravity Torque At Shaft: %.2f\n", gravityTorqueAtShaft)
-
-
-    end
-
+function res = runSim(motor, mech, ctrl, targetCm)
+    state.pos = 0; state.vel = 0; state.t = 0; state.prevV = 0;
+    dt = 0.026;
+    res.t = []; res.p = [];
     
-
+    while state.t < 3.0
+        [v, ~] = ctrl.calculate(state, mech, motor, targetCm);
+        
+        torqueMotor = motor.getTorque(v, state.vel);
+        torqueLoad = (torqueMotor / mech.ratio) + mech.getGravityTorque();
+        
+        % Net Torque with Friction
+        netT = torqueLoad - (sign(state.vel) * mech.kineticFric);
+        
+        acc = netT / mech.getInertia();
+        state.pos = state.pos + dt * state.vel;
+        state.vel = state.vel + acc * dt;
+        state.t = state.t + dt;
+        state.prevV = v;
+        
+        res.t(end+1) = state.t;
+        res.p(end+1) = mech.getLinearPos(state.pos);
+    end
 end
