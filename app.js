@@ -9,11 +9,17 @@ let mousePos = { x: null, y: null };
 const getEl = id => document.getElementById(id);
 const getVal = id => parseFloat(getEl(id).value) || 0;
 
+let pidCounter = 0;
+
 function addController(p = 0.014, i = 0, d = 0.00082, f = 0.1, name = '') {
-  const id = Date.now();
-  const color = COLORS[controllers.length % COLORS.length];
-  const label = name || `PID ${controllers.length + 1}`;
-  controllers.push({ id, color, name: label, p, i, d, f, integral: 0, prevErr: 0 });
+  pidCounter++;
+  const baseName = name || `PID ${pidCounter}`;
+  const baseDt = getVal('dt') / 1000;
+  const color = COLORS[0]; // Will be updated
+  const label = `${baseName}.1`;
+  const borderDash = []; // Will be updated
+  const variationMultiplier = Math.random() * 1.0 + 0.5; // 0.5 to 1.5
+  controllers.push({ id: Date.now(), color, name: label, p, i, d, f, dt: baseDt, borderDash, integral: 0, prevErr: 0, baseName, variationMultiplier });
   renderControllers();
   rebuildChart();
 }
@@ -28,8 +34,17 @@ function renderControllers() {
   const list = getEl('ctrlList');
   list.innerHTML = '';
 
-  controllers.forEach((ctrl, index) => {
-    ctrl.color = COLORS[index % COLORS.length];
+  // Group controllers by baseName
+  const pidGroups = {};
+  controllers.forEach(ctrl => {
+    const baseName = ctrl.baseName;
+    if (!pidGroups[baseName]) pidGroups[baseName] = [];
+    pidGroups[baseName].push(ctrl);
+  });
+
+  Object.keys(pidGroups).forEach(baseName => {
+    const instances = pidGroups[baseName];
+    const firstCtrl = instances[0];
 
     const card = document.createElement('div');
     card.className = 'ctrl-card';
@@ -39,13 +54,17 @@ function renderControllers() {
 
     const dot = document.createElement('div');
     dot.className = 'ctrl-dot';
-    dot.style.background = ctrl.color;
+    dot.style.background = firstCtrl.color; // Or average, but keep first
 
     const nameInput = document.createElement('input');
     nameInput.className = 'ctrl-name-input';
-    nameInput.value = ctrl.name;
+    nameInput.value = baseName;
     nameInput.addEventListener('change', () => {
-      ctrl.name = nameInput.value || ctrl.name;
+      const newBase = nameInput.value || baseName;
+      instances.forEach((ctrl, idx) => {
+        ctrl.baseName = newBase;
+        ctrl.name = `${newBase}.${idx + 1}`;
+      });
       rebuildChart();
     });
 
@@ -72,22 +91,51 @@ function renderControllers() {
       const input = document.createElement('input');
       input.type = 'number';
       input.step = field.step;
-      input.value = ctrl[field.key];
+      input.value = firstCtrl[field.key];
       input.addEventListener('change', () => {
-        ctrl[field.key] = parseFloat(input.value) || 0;
+        instances.forEach(ctrl => ctrl[field.key] = parseFloat(input.value) || 0);
       });
 
       container.append(label, input);
       gains.appendChild(container);
     });
 
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-btn';
-    removeBtn.type = 'button';
-    removeBtn.textContent = '✕';
-    removeBtn.addEventListener('click', () => removeController(ctrl.id));
+    // Instances slider
+    const sliderContainer = document.createElement('div');
+    sliderContainer.className = 'gain-field';
+    sliderContainer.innerHTML = `
+      <label>Instances: <span class="instances-value">${instances.length}</span></label>
+      <input type="range" class="instances-slider" min="1" max="10" value="${instances.length}" step="1" style="width: 100%;" data-basename="${baseName}">
+    `;
+    gains.appendChild(sliderContainer);
 
-    card.append(gains, removeBtn);
+    // Display base looptime
+    const dtDisplay = document.createElement('div');
+    dtDisplay.className = 'gain-field';
+    dtDisplay.innerHTML = `<label>Base looptime: ${(firstCtrl.dt * 1000).toFixed(1)} ms</label>`;
+    gains.appendChild(dtDisplay);
+
+    // Instances list with remove buttons
+    const instancesDiv = document.createElement('div');
+    instancesDiv.className = 'gain-field';
+    instances.forEach((ctrl, idx) => {
+      const instanceDiv = document.createElement('div');
+      instanceDiv.style.display = 'flex';
+      instanceDiv.style.alignItems = 'center';
+      instanceDiv.style.gap = '8px';
+      const label = document.createElement('label');
+      label.textContent = `Instance ${idx + 1}`;
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-btn';
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', () => removeController(ctrl.id));
+      instanceDiv.append(label, removeBtn);
+      instancesDiv.appendChild(instanceDiv);
+    });
+    gains.appendChild(instancesDiv);
+
+    card.appendChild(header);
+    card.appendChild(gains);
     list.appendChild(card);
   });
 }
@@ -117,6 +165,7 @@ function rebuildChart() {
       borderColor: ctrl.color,
       backgroundColor: 'transparent',
       borderWidth: 2,
+      borderDash: ctrl.borderDash,
       pointRadius: 0,
       tension: 0.2
     }));
@@ -269,6 +318,7 @@ function pidCalc(ctrl, state, mech, targetCm, dt) {
 
 function initSim() {
   const dt = getVal('dt') / 1000;
+  const simDt = getVal('simDt') / 1000;
   const motor = getMotor();
   const mech = getMech();
   const target = getVal('targetInput');
@@ -280,7 +330,7 @@ function initSim() {
     ctrl.prevErr = 0;
     ctrl.ki = ctrl.i;
   });
-  return { dt, motor, mech, target, totalTime, states, done: false, loopVariance };
+  return { dt, simDt, motor, mech, target, totalTime, states, done: false, loopVariance };
 }
 
 function normalRandom(mean = 0, std = 1) {
@@ -294,7 +344,7 @@ function normalRandom(mean = 0, std = 1) {
 function stepBatch(batchSize = 80) {
   if (!simState || simState.done) return;
 
-  const { dt, motor, mech, target, loopVariance } = simState;
+  const { dt, simDt, motor, mech, target, loopVariance } = simState;
 
   // Add initial data points at t=0 if this is the first call
   if (simState.states[0].t === 0 && charts.positionChart?.data.datasets[0].data.length === 0) {
@@ -321,32 +371,40 @@ function stepBatch(batchSize = 80) {
       allDone = false;
 
       // Apply random timing variation if loopVariance > 0
-      let stepDt = dt;
+      let stepDt = ctrl.dt;
       if (loopVariance > 0) {
         const randomVariation = normalRandom(0, loopVariance / 2);
         // Clamp to ±3x the loopVariance
         const clampedVariation = Math.max(-3 * loopVariance, Math.min(3 * loopVariance, randomVariation));
-        stepDt = Math.max(0.001, dt + clampedVariation); // Ensure dt doesn't go negative or too small
+        stepDt = Math.max(0.001, ctrl.dt + clampedVariation * ctrl.variationMultiplier); // Ensure dt doesn't go negative or too small
       }
 
       const v = pidCalc(ctrl, state, mech, target, stepDt);
-      const torqueMotor = motor.getTorque(v, state.vel);
-      const effectiveRatio = mech.getEffectiveRatio();
-      const torqueLoad = torqueMotor / effectiveRatio + mech.getGravityTorque() + mech.getCounterSpringTorque();
-      const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
-      const acc = netT / mech.getInertia();
 
-      // Calculate current draw
-      const current = motor.getCurrent(v, state.vel);
+      // Simulate physics in smaller timesteps
+      const numSubSteps = Math.ceil(stepDt / simDt);
+      const actualSimDt = stepDt / numSubSteps;
+      let totalCurrent = 0;
+      let prevVel = state.vel;
 
-      // Store previous velocity for acceleration calculation
-      const prevVel = state.vel;
+      for (let subStep = 0; subStep < numSubSteps; subStep++) {
+        const torqueMotor = motor.getTorque(v, state.vel);
+        const effectiveRatio = mech.getEffectiveRatio();
+        const torqueLoad = torqueMotor / effectiveRatio + mech.getGravityTorque() + mech.getCounterSpringTorque();
+        const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
+        const acc = netT / mech.getInertia();
 
-      state.pos += stepDt * state.vel;
-      state.vel += acc * stepDt;
+        // Accumulate current
+        totalCurrent += motor.getCurrent(v, state.vel);
+
+        state.pos += actualSimDt * state.vel;
+        state.vel += acc * actualSimDt;
+      }
+
       state.t += stepDt;
 
-      // Calculate acceleration (change in velocity over time)
+      // Calculate average current and acceleration
+      const avgCurrent = totalCurrent / numSubSteps;
       const acceleration = (state.vel - prevVel) / stepDt;
 
       const position = +mech.getLinearPos(state.pos).toFixed(3);
@@ -354,13 +412,13 @@ function stepBatch(batchSize = 80) {
       charts.positionChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: position });
       charts.velocityChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +state.vel.toFixed(3) });
       charts.accelChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +acceleration.toFixed(3) });
-      charts.currentChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +current.toFixed(3) });
+      charts.currentChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +avgCurrent.toFixed(3) });
       charts.voltageChart.data.datasets[index].data.push({ x: +state.t.toFixed(4), y: +v.toFixed(3) });
     });
 
     const currentTime = Math.max(...simState.states.map(s => s.t));
     const targetDataset = charts.positionChart.data.datasets[controllers.length];
-    if (targetDataset && targetDataset.data.length === 0 || currentTime - targetDataset.data[targetDataset.data.length - 1].x > dt * 5) {
+    if (targetDataset && targetDataset.data.length === 0 || currentTime - targetDataset.data[targetDataset.data.length - 1].x > (controllers[0]?.dt || 0.026) * 5) {
       targetDataset.data.push({ x: +currentTime.toFixed(4), y: target });
     }
 
@@ -481,6 +539,23 @@ function setupEvents() {
   getEl('runBtn').addEventListener('click', () => toggleRun());
   getEl('targetInput').addEventListener('input', updateTargetLine);
   getEl('simTime').addEventListener('input', updateTargetLine);
+  
+  // Update base looptime for all controllers
+  getEl('dt').addEventListener('input', () => {
+    const newDt = getVal('dt') / 1000;
+    controllers.forEach(ctrl => ctrl.dt = newDt);
+    renderControllers();
+  });
+  
+  // Instances sliders (event delegation)
+  getEl('ctrlList').addEventListener('input', (e) => {
+    if (e.target.classList.contains('instances-slider')) {
+      const baseName = e.target.dataset.basename;
+      const newVal = parseInt(e.target.value);
+      adjustInstances(baseName, newVal);
+      e.target.parentElement.querySelector('.instances-value').textContent = newVal;
+    }
+  });
   
   // Cascade rigging checkbox
   getEl('cascadeRigging').addEventListener('change', (e) => {
