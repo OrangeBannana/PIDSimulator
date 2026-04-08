@@ -11,23 +11,148 @@ const getVal = id => parseFloat(getEl(id).value) || 0;
 
 let pidCounter = 0;
 
+let globalInstanceUID = 1;
 function addController(p = 0.014, i = 0, d = 0.00082, f = 0.1, name = '') {
   pidCounter++;
   const baseName = name || `PID ${pidCounter}`;
-  const baseDt = getVal('dt') / 1000;
-  const color = COLORS[0]; // Will be updated
+  const baseDt = 0.026; // 26ms default
+  const idx = controllers.filter(c => c.baseName === baseName).length;
+  const color = COLORS[idx % COLORS.length];
+  const borderDash = idx === 0 ? [] : [5 + idx * 2, 5];
   const label = `${baseName}.1`;
-  const borderDash = []; // Will be updated
-  const variationMultiplier = Math.random() * 1.0 + 0.5; // 0.5 to 1.5
-  controllers.push({ id: Date.now(), color, name: label, p, i, d, f, dt: baseDt, borderDash, integral: 0, prevErr: 0, baseName, variationMultiplier });
+  controllers.push({
+    id: Date.now(),
+    uid: globalInstanceUID++,
+    color,
+    borderDash,
+    name: label,
+    p, i, d, f, dt: baseDt, integral: 0, prevErr: 0, baseName, variation: 0
+  });
   renderControllers();
-  rebuildChart();
 }
 
-function removeController(id) {
-  controllers = controllers.filter(c => c.id !== id);
+function removeController(identifier) {
+  controllers = controllers.filter(c => c.id !== identifier && c.baseName !== identifier);
   renderControllers();
-  rebuildChart();
+}
+
+function adjustInstances(baseName, newVal) {
+    // Prompt user to re-run simulation for new instance count
+    getEl('status').textContent = 'Instance count changed. Re-run simulation to update results.';
+  const instances = controllers.filter(c => c.baseName === baseName);
+  const currentCount = instances.length;
+  const firstCtrl = instances[0];
+
+  if (newVal > currentCount) {
+    // Add new instances with persistent uid, color, dash
+    for (let i = currentCount; i < newVal; i++) {
+      const idx = i;
+      const newCtrl = {
+        id: Date.now() + i,
+        uid: globalInstanceUID++,
+        color: COLORS[idx % COLORS.length],
+        borderDash: idx === 0 ? [] : [5 + idx * 2, 5],
+        name: `${baseName}.${i + 1}`,
+        p: firstCtrl.p,
+        i: firstCtrl.i,
+        d: firstCtrl.d,
+        f: firstCtrl.f,
+        dt: firstCtrl.dt,
+        integral: 0,
+        prevErr: 0,
+        baseName,
+        variation: 0
+      };
+      controllers.push(newCtrl);
+    }
+  } else if (newVal < currentCount) {
+    // Remove extra instances
+    const toRemove = instances.slice(newVal);
+    controllers = controllers.filter(c => !toRemove.includes(c));
+  }
+
+  // Only update the name for each instance, not color or borderDash
+  const updatedInstances = controllers.filter(c => c.baseName === baseName);
+  updatedInstances.forEach((ctrl, idx) => {
+    ctrl.name = `${baseName}.${idx + 1}`;
+  });
+
+  renderControllers();
+  // Update chart datasets to match controllers for each chart, preserving data where possible
+  Object.entries(charts).forEach(([chartId, chart]) => {
+    if (!chart) return;
+    const isPositionChart = chartId === 'positionChart';
+    const datasets = chart.data.datasets;
+    if (isPositionChart) {
+      // Always keep the target line as the last dataset
+      const targetLine = datasets[datasets.length - 1];
+      // Save existing controller data and style by uid
+      const existingData = {};
+      const existingStyle = {};
+      for (let i = 0; i < datasets.length - 1; i++) {
+        const ds = datasets[i];
+        if (ds && ds._uid != null) {
+          existingData[ds._uid] = ds.data;
+          existingStyle[ds._uid] = {
+            borderColor: ds.borderColor,
+            borderDash: ds.borderDash
+          };
+        }
+      }
+      // Remove all controller datasets (everything except last)
+      datasets.length = 1;
+      datasets[0] = targetLine;
+      // Insert controller datasets before the target line, preserving data and style by uid
+      for (let i = 0; i < controllers.length; i++) {
+        const ctrl = controllers[i];
+        // First instance always solid, others dashed
+        const borderDash = i === 0 ? [] : (existingStyle[ctrl.uid]?.borderDash || [5 + i * 2, 5]);
+        datasets.splice(i, 0, {
+          label: ctrl.name,
+          _uid: ctrl.uid,
+          data: existingData[ctrl.uid] || [],
+          borderColor: existingStyle[ctrl.uid]?.borderColor || ctrl.color,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash,
+          pointRadius: 0,
+          tension: 0.2
+        });
+      }
+      // Update controller dataset styles
+      for (let i = 0; i < controllers.length; i++) {
+        const ctrl = controllers[i];
+        datasets[i].label = ctrl.name;
+        datasets[i].borderColor = datasets[i].borderColor || ctrl.color;
+        datasets[i].borderDash = i === 0 ? [] : (datasets[i].borderDash || [5 + i * 2, 5]);
+        datasets[i]._uid = ctrl.uid;
+      }
+    } else {
+      // For other charts, just match controller count
+      while (datasets.length > controllers.length) {
+        datasets.pop();
+      }
+      for (let i = 0; i < controllers.length; i++) {
+        if (!datasets[i]) {
+          datasets[i] = {
+            label: controllers[i].name,
+            data: [],
+            borderColor: controllers[i].color,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: controllers[i].borderDash,
+            pointRadius: 0,
+            tension: 0.2
+          };
+        } else {
+          datasets[i].label = controllers[i].name;
+          datasets[i].borderColor = controllers[i].color;
+          datasets[i].borderDash = controllers[i].borderDash;
+        }
+      }
+    }
+    chart.update('none');
+  });
 }
 
 function renderControllers() {
@@ -54,7 +179,7 @@ function renderControllers() {
 
     const dot = document.createElement('div');
     dot.className = 'ctrl-dot';
-    dot.style.background = firstCtrl.color; // Or average, but keep first
+    dot.style.background = firstCtrl.color;
 
     const nameInput = document.createElement('input');
     nameInput.className = 'ctrl-name-input';
@@ -65,7 +190,7 @@ function renderControllers() {
         ctrl.baseName = newBase;
         ctrl.name = `${newBase}.${idx + 1}`;
       });
-      rebuildChart();
+      // No rebuildChart here; chart datasets will be updated by adjustInstances if needed
     });
 
     header.append(dot, nameInput);
@@ -100,39 +225,80 @@ function renderControllers() {
       gains.appendChild(container);
     });
 
-    // Instances slider
-    const sliderContainer = document.createElement('div');
-    sliderContainer.className = 'gain-field';
-    sliderContainer.innerHTML = `
-      <label>Instances: <span class="instances-value">${instances.length}</span></label>
-      <input type="range" class="instances-slider" min="1" max="10" value="${instances.length}" step="1" style="width: 100%;" data-basename="${baseName}">
+    const dtContainer = document.createElement('div');
+    dtContainer.className = 'gain-field';
+    dtContainer.style.display = 'flex';
+    dtContainer.style.alignItems = 'center';
+    dtContainer.style.gap = '8px';
+    dtContainer.innerHTML = `
+      <label style="width: 140px;">Looptime (ms):</label>
+      <input type="number" step="0.1" value="${(firstCtrl.dt * 1000).toFixed(1)}" style="flex: 1;" />
     `;
-    gains.appendChild(sliderContainer);
-
-    // Display base looptime
-    const dtDisplay = document.createElement('div');
-    dtDisplay.className = 'gain-field';
-    dtDisplay.innerHTML = `<label>Base looptime: ${(firstCtrl.dt * 1000).toFixed(1)} ms</label>`;
-    gains.appendChild(dtDisplay);
-
-    // Instances list with remove buttons
-    const instancesDiv = document.createElement('div');
-    instancesDiv.className = 'gain-field';
-    instances.forEach((ctrl, idx) => {
-      const instanceDiv = document.createElement('div');
-      instanceDiv.style.display = 'flex';
-      instanceDiv.style.alignItems = 'center';
-      instanceDiv.style.gap = '8px';
-      const label = document.createElement('label');
-      label.textContent = `Instance ${idx + 1}`;
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-btn';
-      removeBtn.textContent = '✕';
-      removeBtn.addEventListener('click', () => removeController(ctrl.id));
-      instanceDiv.append(label, removeBtn);
-      instancesDiv.appendChild(instanceDiv);
+    const dtInput = dtContainer.querySelector('input');
+    dtInput.addEventListener('change', () => {
+      const value = parseFloat(dtInput.value) / 1000;
+      instances.forEach(ctrl => ctrl.dt = value);
     });
-    gains.appendChild(instancesDiv);
+    gains.appendChild(dtContainer);
+
+    const variationContainer = document.createElement('div');
+    variationContainer.className = 'gain-field';
+    variationContainer.style.display = 'flex';
+    variationContainer.style.alignItems = 'center';
+    variationContainer.style.gap = '8px';
+    variationContainer.innerHTML = `
+      <label style="width: 140px;">Variation (ms):</label>
+      <input type="number" step="1" value="${firstCtrl.variation || 0}" style="flex: 1;" />
+    `;
+    const variationInput = variationContainer.querySelector('input');
+    variationInput.addEventListener('change', () => {
+      const value = parseFloat(variationInput.value) || 0;
+      instances.forEach(ctrl => ctrl.variation = value);
+    });
+    gains.appendChild(variationContainer);
+
+    const sliderRow = document.createElement('div');
+    sliderRow.style.display = 'flex';
+    sliderRow.style.alignItems = 'center';
+    sliderRow.style.gap = '8px';
+    sliderRow.style.width = '100%';
+    sliderRow.style.boxSizing = 'border-box';
+
+    const sliderLabel = document.createElement('label');
+    sliderLabel.textContent = `Instances: `;
+    sliderLabel.style.flexShrink = '0';
+    sliderLabel.style.minWidth = '85px';
+    
+    const instancesValue = document.createElement('span');
+    instancesValue.className = 'instances-value';
+    instancesValue.textContent = instances.length;
+    sliderLabel.appendChild(instancesValue);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'instances-slider';
+    slider.min = '1';
+    slider.max = '10';
+    slider.value = `${instances.length}`;
+    slider.step = '1';
+    slider.style.flex = '1';
+    slider.style.minWidth = '100px';
+    slider.dataset.basename = baseName;
+    slider.addEventListener('input', (e) => {
+      const newVal = parseInt(e.target.value, 10);
+      instancesValue.textContent = newVal;
+      adjustInstances(baseName, newVal);
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-btn';
+    removeBtn.type = 'button';
+    removeBtn.textContent = '✕';
+    removeBtn.style.flexShrink = '0';
+    removeBtn.addEventListener('click', () => removeController(baseName));
+
+    sliderRow.append(sliderLabel, slider, removeBtn);
+    gains.appendChild(sliderRow);
 
     card.appendChild(header);
     card.appendChild(gains);
@@ -298,7 +464,8 @@ function getMech() {
     getLinearPos(angPos) {
       const effectiveRatio = this.getEffectiveRatio();
       const distanceMultiplier = this.getDistanceMultiplier();
-      return ((angPos / (2 * Math.PI)) * effectiveRatio * distanceMultiplier) * 2 * Math.PI * spoolR * 100;
+      // Linear position in cm: angPos [rad] * ratio * stages * spoolR [m] * 100
+      return angPos * effectiveRatio * distanceMultiplier * this.spoolR * 100;
     }
   };
 }
@@ -317,20 +484,18 @@ function pidCalc(ctrl, state, mech, targetCm, dt) {
 }
 
 function initSim() {
-  const dt = getVal('dt') / 1000;
   const simDt = getVal('simDt') / 1000;
   const motor = getMotor();
   const mech = getMech();
   const target = getVal('targetInput');
   const totalTime = getVal('simTime');
-  const loopVariance = getVal('loopVariance') / 1000; // Convert ms to seconds
   const states = controllers.map(() => ({ pos: 0, vel: 0, t: 0 }));
   controllers.forEach(ctrl => {
     ctrl.integral = 0;
     ctrl.prevErr = 0;
     ctrl.ki = ctrl.i;
   });
-  return { dt, simDt, motor, mech, target, totalTime, states, done: false, loopVariance };
+  return { simDt, motor, mech, target, totalTime, states, done: false };
 }
 
 function normalRandom(mean = 0, std = 1) {
@@ -344,7 +509,7 @@ function normalRandom(mean = 0, std = 1) {
 function stepBatch(batchSize = 80) {
   if (!simState || simState.done) return;
 
-  const { dt, simDt, motor, mech, target, loopVariance } = simState;
+  const { simDt, motor, mech, target } = simState;
 
   // Add initial data points at t=0 if this is the first call
   if (simState.states[0].t === 0 && charts.positionChart?.data.datasets[0].data.length === 0) {
@@ -361,7 +526,7 @@ function stepBatch(batchSize = 80) {
     }
   }
 
-  for (let step = 0; step < batchSize; step++) {
+    for (let step = 0; step < batchSize; step++) {
     let allDone = true;
 
     controllers.forEach((ctrl, index) => {
@@ -370,16 +535,18 @@ function stepBatch(batchSize = 80) {
 
       allDone = false;
 
-      // Apply random timing variation if loopVariance > 0
+      // Apply random timing variation if ctrl.variation > 0
       let stepDt = ctrl.dt;
-      if (loopVariance > 0) {
-        const randomVariation = normalRandom(0, loopVariance / 2);
-        // Clamp to ±3x the loopVariance
-        const clampedVariation = Math.max(-3 * loopVariance, Math.min(3 * loopVariance, randomVariation));
-        stepDt = Math.max(0.001, ctrl.dt + clampedVariation * ctrl.variationMultiplier); // Ensure dt doesn't go negative or too small
+      if (ctrl.variation > 0) {
+        const randomVariation = normalRandom(0, ctrl.variation / 2000); // variation is in ms, so /1000 /2
+        // Clamp to ±3x the variation
+        const clampedVariation = Math.max(-3 * ctrl.variation / 1000, Math.min(3 * ctrl.variation / 1000, randomVariation));
+        stepDt = Math.max(0.001, ctrl.dt + clampedVariation);
       }
 
       const v = pidCalc(ctrl, state, mech, target, stepDt);
+
+      // Debug: log key parameters for first controller, first step
 
       // Simulate physics in smaller timesteps
       const numSubSteps = Math.ceil(stepDt / simDt);
@@ -390,15 +557,21 @@ function stepBatch(batchSize = 80) {
       for (let subStep = 0; subStep < numSubSteps; subStep++) {
         const torqueMotor = motor.getTorque(v, state.vel);
         const effectiveRatio = mech.getEffectiveRatio();
-        const torqueLoad = torqueMotor / effectiveRatio + mech.getGravityTorque() + mech.getCounterSpringTorque();
+        const gravityTorque = mech.getGravityTorque();
+        const counterSpringTorque = mech.getCounterSpringTorque();
+        const torqueLoad = torqueMotor / effectiveRatio + gravityTorque + counterSpringTorque;
         const netT = torqueLoad - Math.sign(state.vel) * mech.kineticFric;
         const acc = netT / mech.getInertia();
+
+        // Debug: log torques and acc for first controller, first step, first 5 substeps
 
         // Accumulate current
         totalCurrent += motor.getCurrent(v, state.vel);
 
         state.pos += actualSimDt * state.vel;
         state.vel += acc * actualSimDt;
+
+        // Debug: log first controller's values
       }
 
       state.t += stepDt;
@@ -440,7 +613,7 @@ function stepBatch(batchSize = 80) {
   getEl('status').textContent = simState.done ? 'Simulation complete.' : `Simulating... ${progress}%`;
 
   if (!simState.done) {
-    animFrame = requestAnimationFrame(() => stepBatch(batchSize));
+    animFrame = requestAnimationFrame(() => stepBatch(300));
   } else {
     stopRun();
   }
@@ -486,7 +659,15 @@ function toggleRun() {
   getEl('runBtn').textContent = '⏹ Stop';
   getEl('runBtn').classList.add('running');
 
+  // Always rebuild chart to match controllers and clear all data
   rebuildChart();
+  // Clear all chart data
+  Object.values(charts).forEach(chart => {
+    if (!chart) return;
+    chart.data.datasets.forEach(ds => ds.data = []);
+    chart.update('none');
+  });
+
   simState = initSim();
 
   const target = getVal('targetInput');
@@ -500,7 +681,7 @@ function toggleRun() {
   getEl('placeholder').style.display = 'none';
   getEl('results').style.display = 'flex';
 
-  animFrame = requestAnimationFrame(() => stepBatch(80));
+  animFrame = requestAnimationFrame(() => stepBatch(300));
 }
 
 function stopRun() {
@@ -540,24 +721,17 @@ function setupEvents() {
   getEl('targetInput').addEventListener('input', updateTargetLine);
   getEl('simTime').addEventListener('input', updateTargetLine);
   
-  // Update base looptime for all controllers
-  getEl('dt').addEventListener('input', () => {
-    const newDt = getVal('dt') / 1000;
-    controllers.forEach(ctrl => ctrl.dt = newDt);
-    renderControllers();
-  });
-  
-  // Instances sliders (event delegation)
-  getEl('ctrlList').addEventListener('input', (e) => {
-    if (e.target.classList.contains('instances-slider')) {
-      const baseName = e.target.dataset.basename;
-      const newVal = parseInt(e.target.value);
-      adjustInstances(baseName, newVal);
-      e.target.parentElement.querySelector('.instances-value').textContent = newVal;
+  // Cascade rigging checkbox
+  getEl('cascadeRigging').addEventListener('change', (e) => {
+    const stagesField = getEl('stagesField');
+    if (e.target.checked) {
+      stagesField.style.display = 'block';
+    } else {
+      stagesField.style.display = 'none';
     }
   });
   
-  // Cascade rigging checkbox
+  // Track mouse position for crosshair
   getEl('cascadeRigging').addEventListener('change', (e) => {
     const stagesField = getEl('stagesField');
     if (e.target.checked) {
