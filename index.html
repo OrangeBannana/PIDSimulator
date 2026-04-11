@@ -1,239 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PID Mechanism Simulator</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulator & Calculator Suite</title>
+  <link rel="icon" href="src/assets/fts-logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="src/styles/main.css" />
+  <script>
+    window.tailwind = { theme: { extend: { fontFamily: { sans: ['Space Grotesk', 'sans-serif'], mono: ['IBM Plex Mono', 'monospace'] } } } };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
-<div class="app">
+  <div class="app">
+    <site-header title="FIRST Tech Sandbox" subtitle="">
+      <button class="btn" type="button" data-theme-toggle="true">Theme</button>
+    </site-header>
 
-<!-- HEADER -->
-<header>
-  <div class="logo">
-    <div class="logo-badge">PID</div>
-    <div>
-      <div class="logo-text">MECHANISM SIM</div>
-      <div class="logo-sub">Linear Motion Control Simulator</div>
-    </div>
-  </div>
-  <div class="header-actions">
-    <button id="darkModeToggle" class="btn" onclick="toggleDarkMode()">🌙</button>
-  </div>
-</header>
-
-<!-- MAIN -->
-<div class="main">
-
-<!-- LEFT PANEL -->
-<div class="panel-left">
-
-  <!-- SIMULATION SECTION -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection('simulation')">
-      <div class="section-tag sim">SIM</div>
-      <div class="section-title">Simulation</div>
-      <div class="section-arrow open" id="simulation-arrow">▶</div>
-    </div>
-    <div class="section-body" id="simulation-body">
-      <div class="field-row">
-        <div class="field">
-          <label>Target position <span>(cm)</span></label>
-          <input type="number" id="targetInput" value="100" step="1" min="1" max="300">
+    <main class="relative z-10 px-6 pb-24 pt-12">
+      <div class="mx-auto max-w-5xl">
+        <div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div class="text-xs uppercase tracking-[0.4em] text-cyan-300">Simulator & Calculator Suite</div>
+            <h1 class="mt-4 text-4xl font-semibold text-slate-100 md:text-5xl">Model Systems, Controllers, and Performance.</h1>
+            <p class="mt-4 max-w-2xl text-base text-slate-400">
+              FTS Simulators allow teams to model the behavior of mechanisms to understand how
+              design choices translate into performance. Practice tuning controllers to gain a
+              better understanding of PID, and gain insight into potentially viable controller gains.
+              <br><br>
+              *NOTE: Simulations are only as useful as the quality of models and data that are input,
+              use them as a guide to design, not a source of truth.
+            </p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-300">
+            <div class="text-xs uppercase tracking-[0.3em] text-slate-400">Contribute</div>
+            <div class="mt-3 text-2xl font-semibold text-slate-100">Got Data?</div>
+            <div class="mt-2 text-sm text-slate-400">Data is needed to validate models. Learn more <a href="https://docs.google.com/forms/d/e/1FAIpQLSe1vOoDE5W-6VVKLJ08oNeCwp602nFYklpuZLBGXYUHSSjbBg/viewform?usp=header" class="text-cyan-300 underline underline-offset-4" target="_blank" rel="noopener noreferrer">HERE</a>.</div>
+          </div>
         </div>
-        <div class="field">
-          <label>Duration <span>(s)</span></label>
-          <input type="number" id="simTime" value="3" step="0.5" min="0.5">
-        </div>
+
+        <section class="mt-12">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-slate-100">Simulators</h2>
+          </div>
+          <div id="simGrid" class="mt-6 grid gap-6 md:grid-cols-2"></div>
+        </section>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Sim timestep <span>(ms)</span></label>
-          <input type="number" id="simDt" value="1" step="0.1" min="0.1">
-        </div>
-      </div>
-
-    </div>
+    </main>
   </div>
 
-  <!-- CONTROLLERS SECTION -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection('controllers')">
-      <div class="section-tag sys">PID</div>
-      <div class="section-title">Controllers</div>
-      <div class="section-arrow open" id="controllers-arrow">▶</div>
-    </div>
-    <div class="section-body" id="controllers-body">
-      <div id="ctrlList"></div>
-      <button class="btn" id="addCtrlButton" style="width: 100%; margin-top: 8px;">+ Add Controller</button>
-    </div>
-  </div>
-
-  <!-- MECHANISM SECTION -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection('mechanism')">
-      <div class="section-tag mot">MECH</div>
-      <div class="section-title">Mechanism</div>
-      <div class="section-arrow open" id="mechanism-arrow">▶</div>
-    </div>
-    <div class="section-body" id="mechanism-body">
-      <div class="field-row">
-        <div class="field">
-          <label>Mass <span>(kg)</span></label>
-          <input type="number" id="mass" value="1.2" step="0.1">
-        </div>
-        <div class="field">
-          <label>Gear ratio</label>
-          <input type="number" id="ratio" value="0.2" step="0.01">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Spool radius <span>(m)</span></label>
-          <input type="number" id="spoolR" value="0.02" step="0.001">
-        </div>
-        <div class="field">
-          <label>Friction coeff μ</label>
-          <input type="number" id="fricCoeff" value="0.5" step="0.05">
-        </div>
-      </div>
-      <div class="field" style="margin-top: 8px;">
-        <label style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" id="cascadeRigging" style="margin: 0;">
-          Cascade rigging
-        </label>
-      </div>
-      <div class="field" id="stagesField" style="display: none; margin-top: 8px;">
-        <label>Number of stages</label>
-        <input type="number" id="stages" value="2" step="1" min="2" max="10">
-      </div>
-      <div class="field" style="margin-top: 8px;">
-        <label>Counterspring force <span>(N)</span></label>
-        <input type="number" id="counterSpring" value="0" step="0.1" min="0">
-      </div>
-    </div>
-  </div>
-
-  <!-- MOTOR SECTION -->
-  <div class="section">
-    <div class="section-header" onclick="toggleSection('motor')">
-      <div class="section-tag mot">MOTOR</div>
-      <div class="section-title">Motor</div>
-      <div class="section-arrow open" id="motor-arrow">▶</div>
-    </div>
-    <div class="section-body" id="motor-body">
-      <div class="field-row">
-        <div class="field">
-          <label>Max voltage <span>(V)</span></label>
-          <input type="number" id="maxV" value="12" step="0.01">
-        </div>
-        <div class="field">
-          <label>Free RPM</label>
-          <input type="number" id="freeRPM" value="5900" step="1">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Stall torque <span>(Nm)</span></label>
-          <input type="number" id="stallTorque" value="0.19" step="0.01">
-        </div>
-        <div class="field">
-          <label>Stall current <span>(A)</span></label>
-          <input type="number" id="stallCurrent" value="9.2" step="0.01">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Motor count</label>
-          <input type="number" id="motorCount" value="2" step="1" min="1">
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- RUN AREA -->
-  <div class="run-area">
-    <button class="btn-run" id="runBtn">▶ Run Simulation</button>
-    <div class="status-bar" id="status">Ready</div>
-  </div>
-
-</div>
-
-<!-- RIGHT PANEL -->
-<div class="panel-right">
-
-  <!-- PLACEHOLDER -->
-  <div class="placeholder" id="placeholder">
-    <div class="placeholder-icon">📊</div>
-    <div class="placeholder-text">
-      Run a simulation to see results
-    </div>
-  </div>
-
-  <!-- RESULTS -->
-  <div class="results" id="results" style="display: none;">
-
-      <!-- CHARTS -->
-    <div class="charts-grid">
-<div class="chart-card chart-wide chart-large">
-        <div class="chart-title">
-          <div class="chart-title-dot" style="background: #00d4ff;"></div>
-          Position vs Time
-        </div>
-        <div class="chart-inner">
-          <canvas id="positionChart"></canvas>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-title">
-          <div class="chart-title-dot" style="background: #7fff6b;"></div>
-          Velocity vs Time
-        </div>
-        <div class="chart-inner">
-          <canvas id="velocityChart"></canvas>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-title">
-          <div class="chart-title-dot" style="background: #ff6b35;"></div>
-          Acceleration vs Time
-        </div>
-        <div class="chart-inner">
-          <canvas id="accelChart"></canvas>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-title">
-          <div class="chart-title-dot" style="background: #ffcc00;"></div>
-          Current vs Time
-        </div>
-        <div class="chart-inner">
-          <canvas id="currentChart"></canvas>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-title">
-          <div class="chart-title-dot" style="background: #c084fc;"></div>
-          Applied Voltage vs Time
-        </div>
-        <div class="chart-inner">
-          <canvas id="voltageChart"></canvas>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-</div>
-
-</div>
-
-  <script src="app.js"></script>
+  <script src="src/registry.js"></script>
+  <script src="src/index-page.js"></script>
 </body>
 </html>
