@@ -19,6 +19,28 @@ function loadSimulator(simName) {
 window.addEventListener('DOMContentLoaded', () => {
   loadSimulator('linear');
 });
+<<<<<<< Updated upstream
+=======
+      targetDataset.data.push({ x: 0, y: target });
+    
+  
+
+    for (let step = 0; step < batchSize; step++) {
+    let allDone = true;
+
+    controllers.forEach((ctrl, index) => {
+      const state = simState.states[index];
+      if (state.t >= simState.totalTime) return;
+
+      allDone = false;
+
+      // Apply random timing variation if ctrl.variation > 0
+      let stepDt = ctrl.dt;
+      if (ctrl.variation > 0) {
+        const randomVariation = normalRandom(0, ctrl.variation / 2000); // variation is in ms, so /1000 /2
+        // Clamp to ±3x the variation
+        const clampedVariation = Math.max(-3 * ctrl.variation / 1000, Math.min(3 * ctrl.variation / 1000, randomVariation));
+>>>>>>> Stashed changes
         stepDt = Math.max(0.001, ctrl.dt + clampedVariation);
       }
 
@@ -95,7 +117,7 @@ window.addEventListener('DOMContentLoaded', () => {
   } else {
     stopRun();
   }
-}
+
 
 function autoScaleY(chart) {
   if (!chart) return;
