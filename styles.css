@@ -1,3 +1,56 @@
+/* ─── LANDING PAGE ─── */
+.landing-container {
+  max-width: 700px;
+  margin: 3rem auto 0 auto;
+  padding: 2.5rem 2rem 4rem 2rem;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.08);
+  text-align: center;
+}
+.landing-title {
+  font-size: 2.3rem;
+  font-family: var(--mono);
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  letter-spacing: 1px;
+}
+.landing-desc {
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  margin-bottom: 2.5rem;
+}
+.simulator-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2rem;
+}
+.simulator-card {
+  background: var(--surface2);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 2rem 2.5rem;
+  min-width: 250px;
+  text-align: center;
+  transition: box-shadow 0.2s, border 0.2s;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.simulator-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  border: 2px solid var(--accent);
+}
+.simulator-title {
+  font-size: 1.3rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+}
+.simulator-desc {
+  color: var(--text-dim);
+  font-size: 1rem;
+}
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
 :root {
