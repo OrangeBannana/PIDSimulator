@@ -10,7 +10,8 @@
     window.tailwind = { theme: { extend: { fontFamily: { sans: ['Space Grotesk', 'sans-serif'], mono: ['IBM Plex Mono', 'monospace'] } } } };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.28/dist/uPlot.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.28/dist/uPlot.iife.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -130,7 +131,7 @@
                 Position vs Time
               </div>
               <div class="chart-inner">
-                <canvas id="positionChart"></canvas>
+                <div id="positionChart" class="uplot-host"></div>
               </div>
             </div>
 
@@ -140,7 +141,7 @@
                 Velocity vs Time
               </div>
               <div class="chart-inner">
-                <canvas id="velocityChart"></canvas>
+                <div id="velocityChart" class="uplot-host"></div>
               </div>
             </div>
 
@@ -150,7 +151,7 @@
                 Acceleration vs Time
               </div>
               <div class="chart-inner">
-                <canvas id="accelChart"></canvas>
+                <div id="accelChart" class="uplot-host"></div>
               </div>
             </div>
 
@@ -160,7 +161,7 @@
                 Current vs Time
               </div>
               <div class="chart-inner">
-                <canvas id="currentChart"></canvas>
+                <div id="currentChart" class="uplot-host"></div>
               </div>
             </div>
 
@@ -170,7 +171,7 @@
                 Applied Voltage vs Time
               </div>
               <div class="chart-inner">
-                <canvas id="voltageChart"></canvas>
+                <div id="voltageChart" class="uplot-host"></div>
               </div>
             </div>
           </div>

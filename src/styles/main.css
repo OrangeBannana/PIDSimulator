@@ -498,6 +498,16 @@ select option {
   height: 200px;
 }
 
+.uplot-host {
+  width: 100%;
+  height: 100%;
+}
+
+.uplot {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
 .ctrl-card {
   background: var(--surface2);
   border: 1px solid rgba(255, 255, 255, 0.06);

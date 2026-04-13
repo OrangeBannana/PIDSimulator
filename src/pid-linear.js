@@ -141,6 +141,40 @@
   let simState = null;
   let pidCounter = 0;
   let globalInstanceUID = 1;
+  let lastTime = 0;
+  let lastSeen = {
+    position: [],
+    velocity: [],
+    accel: [],
+    current: [],
+    voltage: []
+  };
+
+  function interpolateSeries(series, timeValue) {
+    if (!series || series.length === 0) return null;
+    let left = null;
+    let right = null;
+
+    for (let i = 0; i < series.length; i++) {
+      const point = series[i];
+      if (point.x === timeValue) return point.y;
+      if (point.x < timeValue) {
+        left = point;
+      } else if (point.x > timeValue) {
+        right = point;
+        break;
+      }
+    }
+
+    if (!left && !right) return null;
+    if (!left) return right.y;
+    if (!right) return left.y;
+
+    const span = right.x - left.x;
+    if (span === 0) return left.y;
+    const ratio = (timeValue - left.x) / span;
+    return left.y + (right.y - left.y) * ratio;
+  }
 
   const getEl = id => document.getElementById(id);
   const getVal = id => parseFloat(getEl(id).value) || 0;
@@ -339,6 +373,7 @@
   function removeController(identifier) {
     controllers = controllers.filter(c => c.id !== identifier && c.baseName !== identifier);
     renderControllers();
+    rebuildChart();
   }
 
   function adjustInstances(baseName, newVal) {
@@ -379,74 +414,8 @@
     });
 
     renderControllers();
-
-    Object.entries(charts).forEach(([chartId, chart]) => {
-      if (!chart) return;
-      const isPositionChart = chartId === 'positionChart';
-      const datasets = chart.data.datasets;
-      if (isPositionChart) {
-        const targetLine = datasets[datasets.length - 1];
-        const existingData = {};
-        const existingStyle = {};
-        for (let i = 0; i < datasets.length - 1; i++) {
-          const ds = datasets[i];
-          if (ds && ds._uid != null) {
-            existingData[ds._uid] = ds.data;
-            existingStyle[ds._uid] = {
-              borderColor: ds.borderColor,
-              borderDash: ds.borderDash
-            };
-          }
-        }
-        datasets.length = 1;
-        datasets[0] = targetLine;
-        for (let i = 0; i < controllers.length; i++) {
-          const ctrl = controllers[i];
-          const borderDash = i === 0 ? [] : (existingStyle[ctrl.uid]?.borderDash || [5 + i * 2, 5]);
-          datasets.splice(i, 0, {
-            label: ctrl.name,
-            _uid: ctrl.uid,
-            data: existingData[ctrl.uid] || [],
-            borderColor: existingStyle[ctrl.uid]?.borderColor || ctrl.color,
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            borderDash,
-            pointRadius: 0,
-            tension: 0.2
-          });
-        }
-        for (let i = 0; i < controllers.length; i++) {
-          const ctrl = controllers[i];
-          datasets[i].label = ctrl.name;
-          datasets[i].borderColor = datasets[i].borderColor || ctrl.color;
-          datasets[i].borderDash = i === 0 ? [] : (datasets[i].borderDash || [5 + i * 2, 5]);
-          datasets[i]._uid = ctrl.uid;
-        }
-      } else {
-        while (datasets.length > controllers.length) {
-          datasets.pop();
-        }
-        for (let i = 0; i < controllers.length; i++) {
-          if (!datasets[i]) {
-            datasets[i] = {
-              label: controllers[i].name,
-              data: [],
-              borderColor: controllers[i].color,
-              backgroundColor: 'transparent',
-              borderWidth: 2,
-              borderDash: controllers[i].borderDash,
-              pointRadius: 0,
-              tension: 0.2
-            };
-          } else {
-            datasets[i].label = controllers[i].name;
-            datasets[i].borderColor = controllers[i].color;
-            datasets[i].borderDash = controllers[i].borderDash;
-          }
-        }
-      }
-      chart.update('none');
-    });
+    lastTime = 0;
+    rebuildChart();
   }
 
   function renderControllers() {
@@ -483,6 +452,7 @@
           ctrl.baseName = newBase;
           ctrl.name = `${newBase}.${idx + 1}`;
         });
+        rebuildChart();
       });
 
       header.append(dot, nameInput);
@@ -604,123 +574,136 @@
     });
   }
 
+  function buildSeries(includeTarget) {
+    const series = [{ label: 'time' }];
+
+    controllers.forEach((ctrl, idx) => {
+      series.push({
+        label: ctrl.name,
+        stroke: ctrl.color,
+        width: 2,
+        dash: idx === 0 ? [] : [5 + idx * 2, 5],
+        points: { show: false }
+      });
+    });
+
+    if (includeTarget) {
+      series.push({
+        label: 'target',
+        stroke: '#888',
+        width: 1.5,
+        dash: [5, 4],
+        points: { show: false }
+      });
+    }
+
+    return series;
+  }
+
+  function buildChartOptions(config, series) {
+    const styles = getComputedStyle(document.documentElement);
+    const axisColor = styles.getPropertyValue('--text-dim').trim() || '#888';
+    const gridColor = 'rgba(128, 128, 128, 0.12)';
+
+    return {
+      width: 0,
+      height: 0,
+      series,
+      legend: { show: false },
+      scales: {
+        x: { time: false },
+        y: { auto: true }
+      },
+      axes: [
+        {
+          label: 'time (s)',
+          stroke: axisColor,
+          grid: { stroke: gridColor },
+          values: (u, vals) => vals.map(v => v.toFixed(2))
+        },
+        {
+          label: `${config.label} (${config.unit})`,
+          stroke: axisColor,
+          grid: { stroke: gridColor },
+          values: (u, vals) => vals.map(v => v.toFixed(1))
+        }
+      ]
+    };
+  }
+
+  function createChart(config) {
+    const host = getEl(config.id);
+    if (!host) return null;
+
+    const includeTarget = config.id === 'positionChart';
+    const series = buildSeries(includeTarget);
+    const data = [[], ...series.slice(1).map(() => [])];
+    const opts = buildChartOptions(config, series);
+    const plot = new uPlot(opts, data, host);
+
+    const resize = () => {
+      const width = host.clientWidth || 0;
+      const height = host.clientHeight || 0;
+      if (width && height) {
+        plot.setSize({ width, height });
+      }
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+
+    return {
+      plot,
+      data,
+      seriesCount: series.length - 1,
+      includeTarget,
+      observer
+    };
+  }
+
   function rebuildChart() {
     Object.values(charts).forEach(chart => {
-      if (chart) chart.destroy();
+      if (!chart) return;
+      chart.observer.disconnect();
+      chart.plot.destroy();
     });
+
     charts = {};
 
     const chartConfigs = [
-      { id: 'positionChart', title: 'Position vs Time', color: '#00d4ff', unit: 'cm' },
-      { id: 'velocityChart', title: 'Velocity vs Time', color: '#7fff6b', unit: 'cm/s' },
-      { id: 'accelChart', title: 'Acceleration vs Time', color: '#ff6b35', unit: 'cm/s^2' },
-      { id: 'currentChart', title: 'Current vs Time', color: '#ffcc00', unit: 'A' },
-      { id: 'voltageChart', title: 'Applied Voltage vs Time', color: '#c084fc', unit: 'V' }
+      { id: 'positionChart', label: 'Position', unit: 'cm' },
+      { id: 'velocityChart', label: 'Velocity', unit: 'cm/s' },
+      { id: 'accelChart', label: 'Acceleration', unit: 'cm/s^2' },
+      { id: 'currentChart', label: 'Current', unit: 'A' },
+      { id: 'voltageChart', label: 'Applied Voltage', unit: 'V' }
     ];
 
     chartConfigs.forEach(config => {
-      const ctx = getEl(config.id);
-      if (!ctx) return;
-
-      const datasets = controllers.map(ctrl => ({
-        label: ctrl.name,
-        data: [],
-        borderColor: ctrl.color,
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: ctrl.borderDash,
-        pointRadius: 0,
-        tension: 0.2
-      }));
-
-      if (config.id === 'positionChart') {
-        datasets.push({
-          label: 'target',
-          data: [],
-          borderColor: '#888',
-          borderDash: [5, 4],
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0
-        });
-      }
-
-      charts[config.id] = new Chart(ctx, {
-        type: 'line',
-        data: { datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          interaction: {
-            mode: 'index',
-            intersect: false
-          },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              enabled: true,
-              mode: 'index',
-              intersect: false,
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              padding: 12,
-              titleFont: { size: 12, weight: 'bold' },
-              bodyFont: { size: 11 },
-              borderColor: 'rgba(255, 255, 255, 0.2)',
-              borderWidth: 1,
-              displayColors: true,
-              callbacks: {
-                title: context => {
-                  if (context.length > 0) {
-                    return `Time: ${context[0].raw.x.toFixed(3)}s`;
-                  }
-                  return '';
-                },
-                label: context => `${context.dataset.label}: ${context.raw.y.toFixed(2)} ${config.unit}`
-              }
-            }
-          },
-          scales: {
-            x: {
-              type: 'linear',
-              title: { display: true, text: 'time (s)', font: { size: 11 }, color: '#888' },
-              ticks: { font: { size: 11 }, color: '#888', maxTicksLimit: 10, callback: v => v.toFixed(2) },
-              grid: { color: 'rgba(128, 128, 128, 0.12)' }
-            },
-            y: {
-              title: { display: true, text: `${config.title.split(' ')[0]} (${config.unit})`, font: { size: 11 }, color: '#888' },
-              ticks: { font: { size: 11 }, color: '#888', callback: v => v.toFixed(1) },
-              grid: { color: 'rgba(128, 128, 128, 0.12)' }
-            }
-          }
-        }
-      });
+      charts[config.id] = createChart(config);
     });
-  }
-
-  function autoScaleY(chart) {
-    if (!chart) return;
-    const target = getVal('targetInput');
-    const allValues = [target];
-    chart.data.datasets.slice(0, controllers.length).forEach(dataset => {
-      dataset.data.forEach(point => allValues.push(point.y));
-    });
-    const minY = Math.min(...allValues);
-    const maxY = Math.max(...allValues);
-    const padding = Math.max((maxY - minY) * 0.15, 2);
-    chart.options.scales.y.min = +(minY - padding).toFixed(1);
-    chart.options.scales.y.max = +(maxY + padding).toFixed(1);
+    lastTime = 0;
+    lastSeen = {
+      position: controllers.map(() => 0),
+      velocity: controllers.map(() => 0),
+      accel: controllers.map(() => 0),
+      current: controllers.map(() => 0),
+      voltage: controllers.map(() => 0)
+    };
+    updateTargetLine();
   }
 
   function updateTargetLine() {
-    if (!charts.positionChart) return;
+    const chart = charts.positionChart;
+    if (!chart) return;
     const target = getVal('targetInput');
-    const total = getVal('simTime');
-    const targetDataset = charts.positionChart.data.datasets[controllers.length];
-    if (!targetDataset) return;
-    targetDataset.data = [{ x: 0, y: target }, { x: total, y: target }];
-    autoScaleY(charts.positionChart);
-    charts.positionChart.update('none');
+    const targetSeriesIndex = chart.includeTarget ? chart.data.length - 1 : null;
+    if (targetSeriesIndex == null) return;
+    const targetSeries = chart.data[targetSeriesIndex];
+    for (let i = 0; i < chart.data[0].length; i++) {
+      targetSeries[i] = target;
+    }
+    chart.plot.setData(chart.data);
   }
 
   function toggleRun() {
@@ -738,13 +721,24 @@
     getEl('runBtn').textContent = 'Stop';
     getEl('runBtn').classList.add('running');
 
+    lastTime = 0;
+    lastSeen = {
+      position: controllers.map(() => 0),
+      velocity: controllers.map(() => 0),
+      accel: controllers.map(() => 0),
+      current: controllers.map(() => 0),
+      voltage: controllers.map(() => 0)
+    };
+
     rebuildChart();
+
     Object.values(charts).forEach(chart => {
       if (!chart) return;
-      chart.data.datasets.forEach(ds => {
-        ds.data = [];
-      });
-      chart.update('none');
+      chart.data[0].length = 0;
+      for (let i = 1; i < chart.data.length; i++) {
+        chart.data[i].length = 0;
+      }
+      chart.plot.setData(chart.data);
     });
 
     const simDt = getVal('simDt') / 1000;
@@ -769,10 +763,7 @@
 
     simState = initSim({ simDt, motor, mech, target, totalTime, controllers });
 
-    const targetDataset = charts.positionChart.data.datasets[controllers.length];
-    if (targetDataset) {
-      targetDataset.data = [{ x: 0, y: target }, { x: totalTime, y: target }];
-    }
+    updateTargetLine();
 
     getEl('placeholder').style.display = 'none';
     getEl('results').style.display = 'flex';
@@ -780,23 +771,78 @@
     animFrame = requestAnimationFrame(() => stepLoop());
   }
 
+  function appendBatch(points, targetValue) {
+    const times = new Set();
+    points.position.forEach(series => {
+      series.forEach(point => {
+        if (point.x > lastTime) times.add(point.x);
+      });
+    });
+
+    if (times.size === 0) return;
+    const timeList = Array.from(times).sort((a, b) => a - b);
+    lastTime = timeList[timeList.length - 1];
+
+    const seriesByKey = {
+      position: points.position,
+      velocity: points.velocity,
+      accel: points.accel,
+      current: points.current,
+      voltage: points.voltage
+    };
+
+    Object.entries(charts).forEach(([chartId, chart]) => {
+      if (!chart) return;
+      timeList.forEach(timeValue => {
+        chart.data[0].push(timeValue);
+
+        if (chartId === 'positionChart') {
+          controllers.forEach((_, idx) => {
+            const value = interpolateSeries(seriesByKey.position[idx], timeValue);
+            if (value != null) lastSeen.position[idx] = value;
+            chart.data[idx + 1].push(lastSeen.position[idx] ?? null);
+          });
+          chart.data[chart.data.length - 1].push(targetValue);
+        } else if (chartId === 'velocityChart') {
+          controllers.forEach((_, idx) => {
+            const value = interpolateSeries(seriesByKey.velocity[idx], timeValue);
+            if (value != null) lastSeen.velocity[idx] = value;
+            chart.data[idx + 1].push(lastSeen.velocity[idx] ?? null);
+          });
+        } else if (chartId === 'accelChart') {
+          controllers.forEach((_, idx) => {
+            const value = interpolateSeries(seriesByKey.accel[idx], timeValue);
+            if (value != null) lastSeen.accel[idx] = value;
+            chart.data[idx + 1].push(lastSeen.accel[idx] ?? null);
+          });
+        } else if (chartId === 'currentChart') {
+          controllers.forEach((_, idx) => {
+            const value = interpolateSeries(seriesByKey.current[idx], timeValue);
+            if (value != null) lastSeen.current[idx] = value;
+            chart.data[idx + 1].push(lastSeen.current[idx] ?? null);
+          });
+        } else if (chartId === 'voltageChart') {
+          controllers.forEach((_, idx) => {
+            const value = interpolateSeries(seriesByKey.voltage[idx], timeValue);
+            if (value != null) lastSeen.voltage[idx] = value;
+            chart.data[idx + 1].push(lastSeen.voltage[idx] ?? null);
+          });
+        }
+      });
+    });
+  }
+
   function stepLoop() {
     const result = stepBatch(simState, controllers, 300);
 
     if (result.points) {
-      controllers.forEach((ctrl, index) => {
-        charts.positionChart.data.datasets[index].data.push(...result.points.position[index]);
-        charts.velocityChart.data.datasets[index].data.push(...result.points.velocity[index]);
-        charts.accelChart.data.datasets[index].data.push(...result.points.accel[index]);
-        charts.currentChart.data.datasets[index].data.push(...result.points.current[index]);
-        charts.voltageChart.data.datasets[index].data.push(...result.points.voltage[index]);
-      });
+      const targetValue = getVal('targetInput');
+      appendBatch(result.points, targetValue);
     }
 
     Object.values(charts).forEach(chart => {
       if (chart) {
-        autoScaleY(chart);
-        chart.update('none');
+        chart.plot.setData(chart.data);
       }
     });
 
