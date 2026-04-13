@@ -604,12 +604,20 @@
     const styles = getComputedStyle(document.documentElement);
     const axisColor = styles.getPropertyValue('--text-dim').trim() || '#888';
     const gridColor = 'rgba(128, 128, 128, 0.12)';
+    const selectFill = 'rgba(0, 212, 255, 0.12)';
+    const selectStroke = 'rgba(0, 212, 255, 0.5)';
 
     return {
       width: 0,
       height: 0,
       series,
       legend: { show: false },
+      select: {
+        show: true,
+        over: true,
+        fill: selectFill,
+        stroke: selectStroke
+      },
       scales: {
         x: { time: false },
         y: { auto: true }
