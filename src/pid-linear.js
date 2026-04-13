@@ -880,6 +880,43 @@
       const stagesField = getEl('stagesField');
       stagesField.style.display = e.target.checked ? 'block' : 'none';
     });
+
+    const chartGrid = getEl('chartsGrid');
+    const expandButtons = document.querySelectorAll('.chart-expand-btn');
+    const cards = document.querySelectorAll('.chart-card');
+
+    cards.forEach(card => {
+      if (card.dataset.defaultLarge === 'true') {
+        card.classList.add('is-large');
+      }
+    });
+    expandButtons.forEach(btn => {
+      const card = btn.closest('.chart-card');
+      const isLarge = card?.classList.contains('is-large');
+      btn.textContent = isLarge ? 'Shrink' : 'Expand';
+      btn.dataset.expanded = isLarge ? 'true' : 'false';
+    });
+
+    expandButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const card = button.closest('.chart-card');
+        if (!card) return;
+        const isLarge = card.classList.contains('is-large');
+        card.classList.toggle('is-large', !isLarge);
+        button.textContent = isLarge ? 'Expand' : 'Shrink';
+        button.dataset.expanded = isLarge ? 'false' : 'true';
+
+        requestAnimationFrame(() => {
+          Object.values(charts).forEach(chart => {
+            if (!chart) return;
+            const host = chart.plot.root;
+            const width = host.clientWidth;
+            const height = host.clientHeight;
+            if (width && height) chart.plot.setSize({ width, height });
+          });
+        });
+      });
+    });
   }
 
   window.addEventListener('DOMContentLoaded', () => {

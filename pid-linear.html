@@ -124,51 +124,56 @@
         </div>
 
         <div class="results" id="results" style="display: none;">
-          <div class="charts-grid">
-            <div class="chart-card chart-wide chart-large">
+          <div class="charts-grid" id="chartsGrid">
+            <div class="chart-card is-large" data-chart-card="position" data-default-large="true">
               <div class="chart-title">
                 <div class="chart-title-dot" style="background: #00d4ff;"></div>
                 Position vs Time
+                <button class="chart-expand-btn" type="button" data-chart-target="positionChart" data-expanded="true">Shrink</button>
               </div>
               <div class="chart-inner">
                 <div id="positionChart" class="uplot-host"></div>
               </div>
             </div>
 
-            <div class="chart-card">
+            <div class="chart-card" data-chart-card="velocity">
               <div class="chart-title">
                 <div class="chart-title-dot" style="background: #7fff6b;"></div>
                 Velocity vs Time
+                <button class="chart-expand-btn" type="button" data-chart-target="velocityChart" data-expanded="false">Expand</button>
               </div>
               <div class="chart-inner">
                 <div id="velocityChart" class="uplot-host"></div>
               </div>
             </div>
 
-            <div class="chart-card">
+            <div class="chart-card" data-chart-card="accel">
               <div class="chart-title">
                 <div class="chart-title-dot" style="background: #ff6b35;"></div>
                 Acceleration vs Time
+                <button class="chart-expand-btn" type="button" data-chart-target="accelChart" data-expanded="false">Expand</button>
               </div>
               <div class="chart-inner">
                 <div id="accelChart" class="uplot-host"></div>
               </div>
             </div>
 
-            <div class="chart-card">
+            <div class="chart-card" data-chart-card="current">
               <div class="chart-title">
                 <div class="chart-title-dot" style="background: #ffcc00;"></div>
                 Current vs Time
+                <button class="chart-expand-btn" type="button" data-chart-target="currentChart" data-expanded="false">Expand</button>
               </div>
               <div class="chart-inner">
                 <div id="currentChart" class="uplot-host"></div>
               </div>
             </div>
 
-            <div class="chart-card">
+            <div class="chart-card" data-chart-card="voltage">
               <div class="chart-title">
                 <div class="chart-title-dot" style="background: #c084fc;"></div>
                 Applied Voltage vs Time
+                <button class="chart-expand-btn" type="button" data-chart-target="voltageChart" data-expanded="false">Expand</button>
               </div>
               <div class="chart-inner">
                 <div id="voltageChart" class="uplot-host"></div>

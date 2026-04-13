@@ -456,13 +456,9 @@ select option {
 }
 
 .charts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
-}
-
-.chart-wide {
-  grid-column: span 2;
 }
 
 .chart-card {
@@ -470,9 +466,15 @@ select option {
   border: 1px solid var(--border);
   padding: 16px;
   border-radius: var(--radius);
+  flex: 1 1 calc(50% - 16px);
+  min-width: 320px;
 }
 
-.chart-card.chart-large .chart-inner {
+.chart-card.is-large {
+  flex: 1 1 100%;
+}
+
+.chart-card.is-large .chart-inner {
   height: 600px;
 }
 
@@ -485,6 +487,25 @@ select option {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.chart-expand-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.chart-expand-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .chart-title-dot {
@@ -512,6 +533,7 @@ select option {
   background: rgba(0, 212, 255, 0.12);
   border: 1px solid rgba(0, 212, 255, 0.5);
 }
+
 
 .ctrl-card {
   background: var(--surface2);
