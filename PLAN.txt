@@ -1,0 +1,75 @@
+PID Simulator — MPA Modular Rewrite (Plan)
+
+Decisions
+- Stack: Vanilla JS + Vite + Tailwind CSS
+- Architecture: MPA — each simulator is its own HTML file, Vite configured with multiple entry points
+- Shared UI: Web Components (custom elements) defined once in src/components/, used as tags in every HTML file
+- Routing: none needed — plain <a href> links, GitHub Pages serves each file directly
+- Charts: uPlot replaces Chart.js
+- State: plain JS module-level variables per simulator (no library)
+- Build: npm run build -> static dist/ -> GitHub Pages
+- Simulators planned: PID Linear Motion, Flywheel, Arm/Rotational, Drivetrain
+
+File Structure
+index.html                  <- landing page
+pid-linear.html             <- PID sim
+flywheel.html               <- future
+arm.html                    <- future
+drivetrain.html             <- future
+
+src/
+  components/
+    site-header.js          <- <site-header title="" subtitle=""> Web Component
+    site-footer.js          <- <site-footer> Web Component (optional)
+    section-panel.js        <- <section-panel label="" tag="" color=""> collapsible panel Web Component
+    uplot-chart.js          <- thin uPlot wrapper (plain JS class or function)
+  simulators/
+    pid-linear-motion/
+      physics.js            <- pure functions: getMotor, getMech, pidCalc, initSim, stepBatch
+      defaults.js           <- default param values
+      page.js               <- wires up DOM, imports physics, runs rAF loop
+    flywheel/  arm/  drivetrain/   <- same structure
+  styles/
+    main.css                <- Tailwind directives + shared CSS custom properties
+  registry.js               <- array of sim metadata for landing page cards
+
+vite.config.js              <- MPA entry points (input: { index, pidLinear, flywheel, ... })
+tailwind.config.js          <- custom theme tokens (colors, fonts)
+
+Phases
+1) Phase 1 - Scaffold
+   - Init Vite project (vanilla template), install tailwindcss, uplot
+   - Port CSS design tokens -> tailwind.config.js custom theme + main.css
+   - Define <site-header> Web Component with title/subtitle attributes and dark mode toggle
+   - Configure vite.config.js with MPA input entries for all HTML files
+   - Create bare-bones index.html and pid-linear.html using <site-header>
+   - Verify build and GitHub Pages deploy structure
+
+2) Phase 2 - Port PID Sim (depends on 1)
+   - Extract physics from app.js -> src/simulators/pid-linear-motion/physics.js (pure functions, no DOM)
+   - Wrap uPlot -> uplot-chart.js utility class
+   - Build <section-panel> Web Component for collapsible sidebar sections
+   - Write page.js: wires inputs, controllers, rAF loop, charts -- imports from physics.js
+   - Complete pid-linear.html with full layout using Web Components + Tailwind
+   - Verify full feature parity: controllers, instances, cascade, motor params, dark mode
+
+3) Phase 3 - Landing Page (parallel with 2)
+   - registry.js exports array: [{ id, name, description, href, icon }]
+   - index.html landing page reads registry, renders sim cards (live cards + Coming Soon)
+
+4) Phase 4 - Simulator Plugin Convention (depends on 2 & 3)
+   - Convention: each simulator = physics.js + defaults.js + page.js + HTML file + registry entry
+
+5) Phase 5 - New Simulators (each independent)
+   - Flywheel, Arm, Drivetrain
+
+6) Phase 6 - Real-time + Optimization (future)
+   - Move stepBatch into Web Worker per simulator
+   - Optimization module: parameter sweep, scoring, results overlay on charts
+
+Notes
+- Web Components use native customElements.define() -- no library needed
+- section-panel encapsulates collapsible toggle logic
+- uPlot replaces Chart.js for real-time readiness
+- GitHub Pages: no 404 hacks needed, every page is a real file
+- physics.js files: zero DOM references, can move to Web Workers later
